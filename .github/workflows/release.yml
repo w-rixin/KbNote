@@ -1,0 +1,263 @@
+# =============================================================================
+# Tauri 跨平台自动构建 & 发布工作流
+# =============================================================================
+#
+# 触发方式：推送 v*.*.* 格式的 Git Tag
+#   git tag v1.0.0
+#   git push <remote> v1.0.0
+#
+# 前提条件（GitHub Secrets）：
+#   - TAURI_SIGNING_PRIVATE_KEY       签名私钥内容
+#   - TAURI_SIGNING_PRIVATE_KEY_PASSWORD  私钥密码（通常为空）
+#
+# 使用前须修改（搜索 TODO 标记）：
+#   1. releaseName: 修改为你的应用名称
+#   2. 构建矩阵: 根据 .claude/release-config.json 的 platforms 配置
+#      裁剪不需要的平台（删除对应 matrix include 条目）
+#
+# CI 只负责构建和上传到 GitHub Release（草稿）。
+# 产物下载和推送到 release 仓库由本地 /release 命令完成。
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+      # 桌面三平台。移动端走 `mobile-v*.*.*` tag + android.yml，前缀不同不会撞到这里。
+  # 手动触发：绕过 git push（某些网络环境 git 走代理会被 502/TLS 中断），
+  # 直接从网页或 API 起构建。tag 不存在时用 GITHUB_REF_NAME 兜底不出 tag 也能跑。
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（留空则用时间戳，如 v20261017-manual）'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  # ===========================================================================
+  # Job 0: 预创建 draft release + 计算构建矩阵
+  #
+  # 1) 预创建 draft release：杜绝 4 个 build job 并发 create release 时撞
+  #    GitHub API race（"Server Error" / "Error updating policy"）。让所有
+  #    build job needs 它，启动时 release 已存在，tauri-action 直接复用并上传。
+  #
+  # 2) 动态矩阵：按仓库变量 RELEASE_WINDOWS 决定是否让 CI 构建 Windows。
+  #      未设 / build → 含 Windows（默认＝现状，向后兼容）
+  #      skip         → 不含 Windows（Windows 安装包改由发版机本地构建提供，
+  #                     CI 不起 windows runner，省 ~12 分钟 Actions 额度）
+  #    设置方式：仓库 Settings → Secrets and variables → Actions → Variables，
+  #    或 `gh variable set RELEASE_WINDOWS --repo <owner/repo> -b skip`。
+  # ===========================================================================
+  prepare-release:
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    outputs:
+      # 归一化后的 tag，job 2 创建/上传产物时要用（手动触发时不能直接用 ref_name）
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Resolve tag
+        # tag 触发时 ref_name 就是 v1.65.0-kylin；workflow_dispatch 手动触发时
+        # ref_name 是分支名（master），直接当 tag 用会让 gh release create 建出
+        # 一个叫 "master" 的 Release。统一归一成以版本号组成的 tag。
+        id: tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          VERSION: ${{ github.event.inputs.version }}
+        run: |
+          if [ "$REF_NAME" != "master" ] && [ "$REF_NAME" != "main" ]; then
+            TAG="$REF_NAME"
+          elif [ -n "$VERSION" ]; then
+            TAG="v${VERSION}-kylin"
+          else
+            TAG="v$(date +%Y%m%d%H%M)-manual"
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "使用标签：$TAG"
+
+      - name: Create draft release if missing
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          REPO: ${{ github.repository }}
+        run: |
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            echo "Release $TAG already exists, skip"
+          else
+            gh release create "$TAG" \
+              --repo "$REPO" \
+              --draft \
+              --title "知识库 $TAG" \
+              --notes "See the assets to download and install this version."
+            echo "Created draft release $TAG"
+          fi
+
+      - name: Report build scope
+        # 矩阵为静态全量声明（见 release job 的 strategy 注释），本步骤只把
+        # 实际构建范围打进日志，方便核对是否有矩阵项没跑起来。
+        run: |
+          echo "本仓库为公开仓库，Actions 与 arm64 runner 均免费无限量，故采用全量矩阵。"
+          echo "将构建：windows-latest / macos-latest(aarch64, x86_64) /"
+          echo "          ubuntu-22.04(x86_64 deb+appimage) / ubuntu-24.04-arm(麒麟 aarch64 deb)"
+          echo "其中 ubuntu-24.04-arm 产出的 deb 即麒麟 / 飞腾 / 鲲鹏所需安装包。"
+
+  # ===========================================================================
+  # Job 1: 跨平台构建
+  # ===========================================================================
+  release:
+    needs: prepare-release
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      # 矩阵**静态声明**（不使用 fromJSON / 不依赖任何 vars）。
+      #
+      # 三个必须记住的坑（本项目都踩过，勿改回）：
+      #
+      # 1) 不要用 `matrix: ${{ fromJSON(needs.X.outputs.matrix) }}` 动态矩阵。
+      #    本项目实测该路径下 release 作业**永远不被创建**，run 直接标 failure，
+      #    页面提示 "This run likely failed because of a workflow file issue"，
+      #    rerun 报 "its workflow file may be broken"。而 prepare-release 是绿的，
+      #    极易误判成"构建失败"。静态矩阵把问题从运行期挪到解析期，可被 actionlint 检出。
+      #
+      # 2) **`matrix` 上下文在 job 级 `if:` 里不可用**（actionlint 明确报错：
+      #    'context "matrix" is not allowed here'，job 级仅
+      #    github / inputs / needs / vars 可用）。写了会让**整个工作流解析失败**，
+      #    所有 job 都不跑 —— 这正是本项目排查最久的一个坑。
+      #
+      # 3) 早期用字符串拼 JSON 产出 [..,..],{..} 非法 JSON，fromJSON 静默失败。
+      #    现改为 YAML 静态列表，从根上不存在拼接问题。
+      #
+      # 关于"按平台跳过"：曾想用 vars + fromJSON 动态构造矩阵，但那样一旦变量未设置
+      # （新仓库默认就没有）行为不确定。改为**全量构建**——公开仓库的 Actions
+      # 与 arm64 runner 均免费无限量，无省额必要。若将来确需跳过某平台，
+      # 正确做法是复制本文件为 release-minimal.yml 手工删掉对应条目，
+      # 不要在矩阵里引变量。
+      #
+      # 若临时不想构建某平台，在 Actions 页面勾选后点 Run workflow，
+      # 或用 workflow_dispatch 的 version 输入重跑指定版本。
+      matrix:
+        include:
+          - platform: windows-latest
+            args: --bundles nsis
+          - platform: macos-latest
+            args: --bundles app,dmg
+            target: aarch64-apple-darwin
+          - platform: macos-latest
+            args: --bundles app,dmg
+            target: x86_64-apple-darwin
+          - platform: ubuntu-22.04
+            # 只出 deb，不出 appimage。
+            # 原因：AppImage 打包在未配置 TAURI_SIGNING_PRIVATE_KEY 时会因
+            # "Unable to find a bundled project for the updater" 整步失败，
+            # 而 x86_64 的 AppImage 对麒麟目标机无用（架构不对）。
+            args: --bundles deb
+          # 麒麟 / 飞腾 / 鲲鹏 aarch64（Tauri 1.x 版本）。
+          #
+          # 🔴 必须用 ubuntu-22.04-arm，不能用 ubuntu-24.04-arm：
+          #    Tauri 1.x 依赖 libwebkit2gtk-4.0-dev，而 Ubuntu 24.04 (noble)
+          #    已**移除该开发包**（只剩运行时库 4.0-37），只有 4.1-dev 可用。
+          #    jammy (22.04) 同时提供 4.0 与 4.1 两套 dev 包，官方支持到 2027-04。
+          #    用 24.04-arm 会直接报 "Unable to locate package libwebkit2gtk-4.0-dev"。
+          - platform: ubuntu-22.04-arm
+            args: --bundles deb
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install Linux system dependencies
+        # 匹配 x86_64（ubuntu-22.04）与 aarch64（ubuntu-22.04-arm）两条 Linux 矩阵。
+        #
+        # 🔴 Tauri 1.x 需要 webkit2gtk-**4.0**-dev（不是 4.1）。
+        #    目标机麒麟 V10 GFB 只有 4.0 运行时库，编译侧也须对齐同一 ABI，
+        #    否则链接出的是 4.1 依赖、到麒麟机上照样装不了。
+        #    jammy 的 4.0-dev 包名是 libwebkit2gtk-4.0-dev / libjavascriptcoregtk-4.0-dev。
+        #    网络走 4.0 自带的 libsoup2.4，故不需要 libsoup-3.0-dev。
+        if: startsWith(matrix.platform, 'ubuntu-')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.0-dev \
+            libjavascriptcoregtk-4.0-dev \
+            libsoup2.4-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            build-essential \
+            file \
+            patchelf
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install frontend dependencies
+        run: pnpm install
+
+      # ─── kb-mcp sidecar：MCP server binary，由 Tauri externalBin 带进安装包 ───
+      # 必须在 tauri build 之前完成，否则 bundle 阶段找不到 binaries/kb-mcp-<triple>(.exe)
+      # macOS 矩阵会传 --target，让 sidecar binary 与 tauri build 同 triple 对齐
+      - name: Build kb-mcp sidecar
+        shell: bash
+        run: |
+          if [ -n "${{ matrix.target }}" ]; then
+            pnpm build:mcp --target ${{ matrix.target }}
+          else
+            pnpm build:mcp
+          fi
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 签名私钥为**可选**。仓库未配置 TAURI_SIGNING_PRIVATE_KEY 时，
+          # tauri-action 会因「需要签名但拿不到密钥」而让整步失败
+          #（AppImage 上表现为 "Unable to find a bundled project for the updater"，
+          #   nsis 上表现为缺少签名）。
+          # 未配置时自动降级为不带 updater 产物构建，装机不受影响
+          #（自动更新本来就需要用户在应用内联网检查，离线场景用不上）。
+          # 已配置则正常产出 .sig，自动更新照常工作。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # 放开 Node 堆上限：tauri build 的 beforeBuildCommand 会跑 `vite build`，
+          # 而 macOS runner 上 Node 的默认 old-space 上限只有 ~2GB。自 v1.50.0 引入
+          # Excalidraw（白板）后前端涨到 9600+ 模块，terser 压缩阶段堆峰值越过 2GB，
+          # 两个 mac job 齐刷刷 "FATAL ERROR: Reached heap limit"（exit 134）而
+          # Linux / Windows runner 默认上限更高才侥幸通过。显式设 8GB 覆盖全平台。
+          NODE_OPTIONS: '--max-old-space-size=8192'
+        with:
+          tagName: ${{ needs.prepare-release.outputs.tag }}
+          releaseName: '知识库 ${{ needs.prepare-release.outputs.tag }}'
+          releaseBody: 'See the assets to download and install this version.'
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }} ${{ matrix.target && format('--target {0}', matrix.target) || '' }}
+
+  # ===========================================================================
+  # 注意：CI 只负责构建和上传到 GitHub Release（草稿）。
+  # 产物下载、复制到 release 仓库、生成 update.json、推送到 Gitee/GitHub
+  # 均由本地 /release 命令完成（避免 CI 跨国推送 Gitee 超时问题）。
+  # ===========================================================================

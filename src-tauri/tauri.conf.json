@@ -1,0 +1,135 @@
+{
+  "$schema": "https://schema.tauri.app/config/1",
+  "build": {
+    "beforeDevCommand": "pnpm dev:clean",
+    "devPath": "http://localhost:1422",
+    "beforeBuildCommand": "pnpm build",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "KbNote",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "bundle": {
+      "active": true,
+      "identifier": "com.agilefr.kbnote",
+      "targets": ["deb"],
+      "externalBin": ["binaries/kb-mcp"],
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "resources": ["resources/pdfium/*", "resources/ocr/RapidOCR-json*", "resources/ocr/models/*"],
+      "copyright": "Copyright (c) 2026 AgileFR",
+      "category": "Productivity",
+      "shortDescription": "本地笔记应用：笔记 / 每日 / 任务，数据全本地",
+      "longDescription": "KbNote 是基于 knowledge-base 1.65.0 精简而来的本地单机笔记应用：Markdown 富文本编辑 + 大纲、全文搜索、每日笔记、任务看板、版本快照，数据全部存储在本机 SQLite，不联网不上云。",
+      "deb": {
+        "depends": ["libc6", "librsvg2-2", "fonts-noto-cjk"]
+      },
+      "windows": {
+        "nsis": {
+          "displayLanguageSelector": true,
+          "languages": ["SimpChinese", "English"],
+          "installerIcon": "icons/icon.ico"
+        }
+      },
+      "macOS": {
+        "minimumSystemVersion": "10.15"
+      }
+    },
+    "systemTray": {
+      "iconPath": "icons/32x32.png",
+      "iconAsTemplate": false,
+      "menuOnLeftClick": false
+    },
+    "allowlist": {
+      "all": false,
+      "app": {
+        "all": true
+      },
+      "window": {
+        "all": true
+      },
+      "dialog": {
+        "all": true
+      },
+      "notification": {
+        "all": true
+      },
+      "clipboard": {
+        "all": true
+      },
+      "globalShortcut": {
+        "all": true
+      },
+      "process": {
+        "all": true
+      },
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "os": {
+        "all": true
+      },
+      "path": {
+        "all": true
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "createDir": true,
+        "removeFile": true,
+        "removeDir": true,
+        "renameFile": true,
+        "copyFile": true,
+        "exists": true,
+        "scope": ["**"]
+      },
+      "http": {
+        "all": false,
+        "request": true,
+        "scope": ["https://**", "http://**"]
+      },
+      "protocol": {
+        "all": false,
+        "asset": true,
+        "assetScope": ["$APPDATA/**", "$DATA/com.agilefr.kbnote-dev/**"]
+      }
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "KbNote",
+        "width": 1524,
+        "height": 830,
+        "minWidth": 1080,
+        "minHeight": 640,
+        "center": true,
+        "decorations": false,
+        "fileDropEnabled": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost https://asset.localhost https://fonts.gstatic.com data: blob:; media-src 'self' asset: http://asset.localhost https://asset.localhost blob:; connect-src 'self' http://localhost:* https://*; font-src 'self' data:; frame-src 'self' asset: http://asset.localhost https://asset.localhost https://player.bilibili.com https://*.bilibili.com https://www.youtube.com https://www.youtube-nocookie.com https://v.qq.com https://*.qq.com https://player.youku.com https://*.youku.com https://player.vimeo.com https://*.vimeo.com https://player.twitch.tv https://*.twitch.tv https://www.dailymotion.com https://*.dailymotion.com"
+    },
+    "updater": {
+      "active": true,
+      "dialog": false,
+      "endpoints": [
+        "https://pub-9d9e6c0cb6934fb0a0c505e3c64f39b2.r2.dev/knowledge-base/update.json",
+        "https://gitee.com/bkywksj/knowledge-base-release/raw/master/update.json",
+        "https://github.com/bkywksj/knowledge-base-release/raw/main/update.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZCODc4OUM5MERBNEFBMUIKUldRYnFxUU55WW1IYXk3L2tTR3V3Z1JTRGhIRXJyWTc2MEpydU9EMkRMaytxVkZ2UFZFdEZrQmYK"
+    }
+  }
+}
