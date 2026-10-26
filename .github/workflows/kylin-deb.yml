@@ -34,6 +34,17 @@ on:
     tags:
       - 'kylin-deb-*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        # 留空 = 只传 artifact（7 天有效），适合日常验证。
+        # 填 tag（如 v1.0.0）= 额外 gh release upload 到该 Release，
+        # 让麒麟 deb 与 release.yml 产出的 Windows 安装包出现在同一个 Release 里。
+        # 前置条件：该 tag 的 Release 必须已存在（release.yml 的 prepare-release
+        # 会预创建 draft；本工作流不自建 Release，避免两条流水线抢 create）。
+        description: '可选：上传到该 tag 的 Release（如 v1.0.0）。留空则只传 artifact'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   build-deb:
@@ -586,6 +597,9 @@ jobs:
           path: src-tauri/target/release/bundle/deb/*.deb
           retention-days: 7
           if-no-files-found: warn
+          # 同一分支反复触发时覆盖同名 artifact，否则 v4 会因重名直接 409 失败
+          #（发版前常要连着跑两三次：先验证、再出最终包）。
+          overwrite: true
 
       - name: Upload build log
         if: always()
@@ -597,3 +611,36 @@ jobs:
             /tmp/cargo.log
           retention-days: 7
           if-no-files-found: ignore
+
+      # ─── 发版通道：把 deb 传进 Release（artifact 只有 7 天）─────────────
+      # 两条流水线分工，写同一个 tag 的 Release，于是 v1.0.0 里 exe 与 deb 齐活：
+      #   release.yml   → Windows 安装包（tauri-action 自动上传）
+      #   kylin-deb.yml → 麒麟 aarch64 deb（本步骤手动上传）
+      #
+      # 🔴 本工作流**绝不自己创建** Release。原因见 release.yml 的 Job 0：
+      #    多个 job 并发 create release 会撞 GitHub API race
+      #    （"Server Error" / "Error updating policy"）。Release 一律由
+      #    release.yml 的 prepare-release 预创建，这里只负责 upload。
+      #    所以填了 release_tag 但 Release 还不存在时，明确报错让人先跑
+      #    release.yml——而不是顺手 gh release create 把竞态引回来。
+      #
+      # 🔴 也不要动 release.yml 里的 aarch64 条目来"顺便"出麒麟包：
+      #    那个条目在 jammy 宿主机直编，产出 glibc 2.35 + OpenSSL 3 的二进制，
+      #    装到麒麟 V10 启动即崩（kb run 9 事故）。ABI 同源只能靠本文件
+      #    的 focal 容器 + ABI 硬闸。
+      - name: Upload deb to Release
+        if: ${{ inputs.release_tag != '' && steps.deb.outputs.path != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          DEB: ${{ steps.deb.outputs.path }}
+        run: |
+          set -e
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::[release] Release $RELEASE_TAG 不存在。先跑一次 release.yml（它的 prepare-release 会预创建 draft），再回到本工作流填这个 tag 重跑。"
+            exit 1
+          fi
+          echo "Release $RELEASE_TAG 已存在，上传 $(basename "$DEB") ($(stat -c %s "$DEB") bytes)"
+          # --clobber：同名资产已存在时覆盖（同一版本重跑很常见）
+          gh release upload "$RELEASE_TAG" "$DEB" --repo "$GITHUB_REPOSITORY" --clobber
+          echo "已上传：$(basename "$DEB")"
