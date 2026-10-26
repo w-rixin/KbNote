@@ -2234,11 +2234,7 @@ function DesktopNoteListPage() {
   );
 }
 
-// ─── 移动端 Wrapper（T-M008 二期）───────────────────
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileNotes } from "./MobileNotes";
-
+/** 笔记列表页。原 kb 按 isMobile 在 MobileNotes / 桌面版间切换；移动端已随删减移除。 */
 export default function NoteListPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileNotes /> : <DesktopNoteListPage />;
+  return <DesktopNoteListPage />;
 }

@@ -1,14 +1,13 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, Typography, Descriptions, Spin, message, Modal, Button, Tooltip, Tag, Image } from "antd";
-import { SyncOutlined, SettingOutlined } from "@ant-design/icons";
+import { SettingOutlined } from "@ant-design/icons";
 import { FolderOpen, ExternalLink } from "lucide-react";
 import { open, revealItemInDir } from "@/lib/tauriShell";
 import { appLogDir } from "@tauri-apps/api/path";
 import type { SystemInfo } from "@/types";
 import { systemApi } from "@/lib/api";
 import { RecommendCards } from "@/components/ui/RecommendCards";
-import { useUpdater } from "@/components/updater/UpdaterProvider";
 
 const OFFICIAL_SITE = "https://kb.ruoyi.plus/";
 const BILIBILI_URL = "https://space.bilibili.com/520725002";
@@ -79,10 +78,8 @@ export default function AboutPage() {
   const navigate = useNavigate();
   const [info, setInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checking, setChecking] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [dbChecking, setDbChecking] = useState(false);
-  const updater = useUpdater();
 
   useEffect(() => {
     systemApi
@@ -191,22 +188,7 @@ export default function AboutPage() {
     }
   }
 
-  async function handleCheckUpdate() {
-    if (!updater) return;
-    setChecking(true);
-    try {
-      // 走全局更新状态机：有更新会自动弹出（并已在后台开始下载）的全局 UpdateModal，
-      // 这里只需对「已是最新 / 检查失败」给出反馈。
-      const r = await updater.checkManually();
-      if (r.error) {
-        message.warning(`检查更新失败: ${r.error}`);
-      } else if (!r.hasUpdate) {
-        message.success("当前已是最新版本");
-      }
-    } finally {
-      setChecking(false);
-    }
-  }
+
 
   return (
     <div className="anchor-page-layout">
@@ -237,15 +219,6 @@ export default function AboutPage() {
             <Descriptions.Item label="应用版本">
               <div className="flex items-center justify-between gap-2">
                 <Text style={{ fontSize: 13 }}>v{info.appVersion}</Text>
-                <Button
-                  type="link"
-                  size="small"
-                  icon={<SyncOutlined spin={checking} />}
-                  loading={checking}
-                  onClick={handleCheckUpdate}
-                >
-                  检查更新
-                </Button>
               </div>
             </Descriptions.Item>
             <Descriptions.Item label="官网">

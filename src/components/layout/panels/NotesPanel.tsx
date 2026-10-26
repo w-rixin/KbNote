@@ -76,7 +76,6 @@ import type {
 import { parseEmojiPrefix } from "@/lib/treeIcons";
 import { NewNoteButton } from "@/components/NewNoteButton";
 import { FileTypeIcon } from "@/components/FileTypeIcon";
-import { TemplatePickerModal } from "@/components/TemplatePickerModal";
 import { NoteComparePicker } from "@/components/editor/NoteComparePicker";
 import {
   targetFromSidebarKey,
@@ -501,7 +500,7 @@ export function NotesPanel() {
   } | null>(null);
 
   // 右键"从模板…"弹窗状态：folderId=null 表示尚未打开
-  const [templatePickerFolder, setTemplatePickerFolder] = useState<number | null>(null);
+  const [, setTemplatePickerFolder] = useState<number | null>(null);
   const [exportTarget, setExportTarget] = useState<ExportFolderTarget | null>(null);
 
   // 右键"与另一篇笔记对比…"：第一篇笔记 id；null = 未打开
@@ -3004,11 +3003,7 @@ export function NotesPanel() {
       <ExportFolderModal target={exportTarget} onClose={() => setExportTarget(null)} />
 
       {/* 右键"从模板新建…" */}
-      <TemplatePickerModal
-        open={templatePickerFolder !== null}
-        folderId={templatePickerFolder}
-        onClose={() => setTemplatePickerFolder(null)}
-      />
+
 
       {/* 右键"与另一篇笔记对比…" */}
       <NoteComparePicker

@@ -13,9 +13,7 @@ import {
 } from "lucide-react";
 
 import { FileTypeIcon } from "./FileTypeIcon";
-import { TemplatePickerModal } from "./TemplatePickerModal";
 import { ImportPreviewModal } from "./ImportPreviewModal";
-import { ClipUrlModal } from "./ClipUrlModal";
 import { importApi } from "@/lib/api";
 import { beginTrackedImportJob } from "@/lib/importJob";
 import { useAppStore } from "@/store";
@@ -69,8 +67,8 @@ export function NewNoteButton({
   size,
 }: Props) {
   const navigate = useNavigate();
-  const [templateOpen, setTemplateOpen] = useState(false);
-  const [clipOpen, setClipOpen] = useState(false);
+  const [, setTemplateOpen] = useState(false);
+  const [, setClipOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     files: ScannedFile[];
     rootPath: string;
@@ -181,11 +179,7 @@ export function NewNoteButton({
           title="新建笔记 (Ctrl+N)"
           style={style}
         />
-        <TemplatePickerModal
-          open={templateOpen}
-          folderId={folderId}
-          onClose={() => setTemplateOpen(false)}
-        />
+
       </>
     );
   }
@@ -216,16 +210,8 @@ export function NewNoteButton({
           />
         </Dropdown>
       </Space.Compact>
-      <TemplatePickerModal
-        open={templateOpen}
-        folderId={folderId}
-        onClose={() => setTemplateOpen(false)}
-      />
-      <ClipUrlModal
-        open={clipOpen}
-        folderId={folderId}
-        onClose={() => setClipOpen(false)}
-      />
+
+
       {importPreview && (
         <ImportPreviewModal
           open

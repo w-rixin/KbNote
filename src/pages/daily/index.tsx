@@ -31,10 +31,6 @@ import { EditorOutline } from "@/components/editor/EditorOutline";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { useAppStore } from "@/store";
 import { useAllFeaturesEnabled } from "@/hooks/useFeatureEnabled";
-import { PlanTodayModal } from "@/components/ai/PlanTodayModal";
-import { DailyImportModal } from "@/components/DailyImportModal";
-import { LinkStatusBar } from "@/components/editor/LinkStatusBar";
-import { NoteAiDrawer } from "@/components/ai/NoteAiDrawer";
 import type { Note } from "@/types";
 
 
@@ -72,13 +68,13 @@ function DesktopDailyPage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [loading, setLoading] = useState(true);
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  const [, setShowPlanModal] = useState(false);
+  const [, setShowImportModal] = useState(false);
   /** 底部链接状态条的刷新信号：保存完成（出链已同步）后自增 */
-  const [linkRefreshTick, setLinkRefreshTick] = useState(0);
+  const [, setLinkRefreshTick] = useState(0);
   // 与 notes/editor 一致：选段触发「问 AI」时打开伴生抽屉，把选段当引用挂上
-  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
-  const [aiSelection, setAiSelection] = useState<string | undefined>(undefined);
+  const [, setAiDrawerOpen] = useState(false);
+  const [, setAiSelection] = useState<string | undefined>(undefined);
   // 相邻"真实存在"的日记日期（跳过空白日）；按当前 date 拉
   const [neighbors, setNeighbors] = useState<{ prev: string | null; next: string | null }>({
     prev: null,
@@ -490,24 +486,9 @@ function DesktopDailyPage() {
         </Space>
       </div>
 
-      <DailyImportModal
-        open={showImportModal}
-        onClose={() => setShowImportModal(false)}
-        onDone={() => {
-          // 转换后日历圆点要跟着变：清掉按月缓存，让 ensureMonthLoaded 重新拉
-          loadingMonthsRef.current.clear();
-          setDatesByMonth(new Map());
-        }}
-      />
 
-      <PlanTodayModal
-        open={showPlanModal}
-        onClose={() => setShowPlanModal(false)}
-        onSaved={() => {
-          // 有了新待办，刷一下侧边栏紧急待办计数
-          useAppStore.getState().refreshTaskStats();
-        }}
-      />
+
+
 
       {/* 可滚动的编辑主体（大纲打开时变 grid 两列：正文 | 6px 分隔 | 大纲） */}
       <div
@@ -683,27 +664,8 @@ function DesktopDailyPage() {
       {/* 链接状态条：与笔记编辑器同款，常驻底部不随正文滚动。
           日记同样支持 [[双链]]，之前只有笔记编辑器能看到链接情况，这里补齐。
           note 为空（当天还没落库）时组件自己返回 null，不占位。 */}
-      <LinkStatusBar
-        noteId={note?.id}
-        refreshKey={linkRefreshTick}
-        /* 大纲列宽 + 6px 分隔条：状态条据此让出同样的空间，左右沿才对得上卡片 */
-        outlineSpace={outlineVisible ? outlineWidth + 6 : 0}
-        outlinePos={outlineVisible ? outlinePosition : undefined}
-        onNavigate={async (id) => {
-          await autoSave.flush();
-          navigate(`/notes/${id}`);
-        }}
-      />
 
-      {/* 伴生 AI 抽屉：仅在日记 note 已存在时挂载（NoteAiDrawer 需要确切 noteId） */}
-      {note && (
-        <NoteAiDrawer
-          noteId={note.id}
-          open={aiDrawerOpen}
-          onClose={() => setAiDrawerOpen(false)}
-          pendingSelection={aiSelection}
-        />
-      )}
+
     </div>
   );
 
@@ -718,10 +680,11 @@ function DesktopDailyPage() {
   }
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileDaily } from "./MobileDaily";
-
+/**
+ * 每日笔记页。
+ * 原 kb 这里按 isMobile 在 DesktopDailyPage / MobileDaily 之间切换——
+ * 移动端已随删减移除，固定渲染桌面版。
+ */
 export default function DailyPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileDaily /> : <DesktopDailyPage />;
+  return <DesktopDailyPage />;
 }

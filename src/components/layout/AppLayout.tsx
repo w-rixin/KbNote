@@ -27,18 +27,12 @@ import { TabBar } from "./TabBar";
 import { isNoteWorkspacePath, isFullBleedPath } from "@/lib/noteWorkspaceRoute";
 import { WindowControls } from "./WindowControls";
 import { CommandPalette } from "@/components/ui/CommandPalette";
-import { QuickCaptureAsrModal } from "@/components/QuickCaptureAsrModal";
 import { QuickNoteCaptureModal } from "@/components/QuickNoteCaptureModal";
-import { AsrToggleController } from "@/components/AsrToggleController";
 import { ShortcutsPanel } from "@/components/ui/ShortcutsPanel";
 import { StarryBackground } from "@/components/ui/StarryBackground";
 import { createBlankAndOpen } from "@/lib/noteCreator";
 import { targetFromFolderParam } from "@/lib/newNoteTarget";
-import { UpdateBadge } from "@/components/ui/UpdateBadge";
-import { UpdateModal } from "@/components/ui/UpdateModal";
 import { AttachmentPreviewModal } from "@/components/preview/AttachmentPreviewModal";
-import { useUpdater } from "@/components/updater/UpdaterProvider";
-import { SyncStatusButton } from "./SyncStatusButton";
 import { syncV1Api } from "@/lib/api";
 
 const { Header, Sider, Content } = Layout;
@@ -359,12 +353,6 @@ export function AppLayout() {
       setPaletteOpen(true);
     }).then((fn) => unlisteners.push(fn));
 
-    // 应用内 ASR 控制器 fallback：当 Ctrl+Shift+Space 触发时焦点不在可注入输入框，
-    // controller 会 dispatch window CustomEvent("asr:open_capture") → 这里打开 Modal
-    const onAsrOpenCapture = () => setAsrCaptureOpen(true);
-    window.addEventListener("asr:open_capture", onAsrOpenCapture);
-    unlisteners.push(() => window.removeEventListener("asr:open_capture", onAsrOpenCapture));
-
     listen<{ success: boolean; error?: string; stats?: { notesCount?: number } }>(
       "sync:manual-push-result",
       (e) => {
@@ -385,19 +373,6 @@ export function AppLayout() {
       useAppStore.getState().bumpNotesRefresh();
     }).then((fn) => unlisteners.push(fn));
 
-    listen("tray:check-update", async () => {
-      const key = "tray-check-update";
-      message.loading({ content: "正在检查更新…", key, duration: 0 });
-      const r = await checkManually();
-      if (r.error) {
-        message.error({ content: `检查更新失败：${r.error}`, key });
-      } else if (!r.hasUpdate) {
-        message.success({ content: "已是最新版本", key });
-      } else {
-        // 有更新：checkManually 内部已自动打开 UpdateModal
-        message.destroy(key);
-      }
-    }).then((fn) => unlisteners.push(fn));
 
     // 托盘 CheckMenuItem 切换"窗口置顶"后回传：skipEmit 避免再回流到 Rust
     listen<boolean>("rust:always-on-top-changed", (e) => {
@@ -412,23 +387,7 @@ export function AppLayout() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [asrCaptureOpen, setAsrCaptureOpen] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
-  const updater = useUpdater();
-  const update = updater?.update ?? null;
-  const updatePhase = updater?.phase ?? "idle";
-  const updateProgress = updater?.progress ?? 0;
-  const updateDownloadedSize = updater?.downloadedSize ?? 0;
-  const updateTotalSize = updater?.totalSize ?? 0;
-  const updateError = updater?.error ?? null;
-  const modalOpen = updater?.modalOpen ?? false;
-  const openModal = updater?.openModal ?? (() => {});
-  const closeModal = updater?.closeModal ?? (() => {});
-  const checkManually =
-    updater?.checkManually ??
-    (async (): Promise<{ hasUpdate: boolean; error?: string }> => ({ hasUpdate: false }));
-  const updateStartDownload = updater?.startDownload ?? (() => {});
-  const updateInstallAndRelaunch = updater?.installAndRelaunch ?? (() => {});
 
   // 启动时静默 pull：让用户从其他设备做的修改自动拉到本地，避免后续编辑产生冲突。
   // 只主窗（label === 'main'）跑一次：pop-out 子窗共用同一个 DB，没必要重复 pull。
@@ -719,12 +678,7 @@ export function AppLayout() {
           </div>
           <DragRegion />
           <div style={{ display: "flex", alignItems: "center" }}>
-            <UpdateBadge
-              update={update}
-              phase={updatePhase}
-              progress={updateProgress}
-              onClick={openModal}
-            />
+
             <Tooltip title="快速记一笔 (Ctrl+Alt+N) — 追加到今天的日记">
               <Button
                 type="text"
@@ -739,7 +693,7 @@ export function AppLayout() {
                 onClick={() => setPaletteOpen(true)}
               />
             </Tooltip>
-            <SyncStatusButton />
+
             <Dropdown menu={{ items: themeMenuItems, onClick: handleThemeSelect, selectedKeys: [activeTheme] }} trigger={["click"]}>
               <Tooltip title="切换主题">
                 <Button type="text" icon={<Palette size={16} />} />
@@ -814,28 +768,14 @@ export function AppLayout() {
         onOpenShortcuts={() => { setPaletteOpen(false); setShortcutsOpen(true); }}
       />
       <ShortcutsPanel open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
-      <QuickCaptureAsrModal
-        open={asrCaptureOpen}
-        onClose={() => setAsrCaptureOpen(false)}
-      />
+
       <QuickNoteCaptureModal
         open={quickNoteOpen}
         onClose={() => setQuickNoteOpen(false)}
       />
-      <UpdateModal
-        open={modalOpen}
-        onClose={closeModal}
-        update={update}
-        phase={updatePhase}
-        progress={updateProgress}
-        downloadedSize={updateDownloadedSize}
-        totalSize={updateTotalSize}
-        error={updateError}
-        onStartDownload={updateStartDownload}
-        onInstall={updateInstallAndRelaunch}
-      />
+
       <AttachmentPreviewModal />
-      <AsrToggleController />
+
     </Layout>
   );
 }

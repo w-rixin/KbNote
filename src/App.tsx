@@ -12,8 +12,6 @@ import { TaskReminderListener } from "@/components/tasks/TaskReminderListener";
 import { MigrationCrashNotice } from "@/components/datadir/MigrationCrashNotice";
 import { ExitConfirmListener } from "@/components/ui/ExitConfirmListener";
 import { CloseRequestedListener } from "@/components/ui/CloseRequestedListener";
-import { UpdaterProvider } from "@/components/updater/UpdaterProvider";
-import { AppLockGate } from "@/components/applock/AppLockGate";
 
 // 紧急提醒窗口 / 迁移 splash 等子窗口共用同一个 React bundle，
 // 但只有 main 窗口才需要挂全局提醒监听器，否则子窗口也会响应 task:reminder
@@ -158,16 +156,7 @@ function App() {
     >
       <AntdApp style={{ height: "100%" }}>
         <ErrorBoundary>
-          <UpdaterProvider enabled={IS_MAIN_WINDOW}>
-            {/* 应用启动锁仅作用于主窗口：子窗口（quick-add/紧急提醒/pop-out）从已解锁会话派生，不再拦截 */}
-            {IS_MAIN_WINDOW ? (
-              <AppLockGate>
-                <AppRouter />
-              </AppLockGate>
-            ) : (
-              <AppRouter />
-            )}
-          </UpdaterProvider>
+          <AppRouter />
           {IS_MAIN_WINDOW && <TaskReminderListener />}
           {/* 🔴 两个退出监听器必须挂在 AppLockGate **外面**：锁屏时 AppLockGate 会整页替换
               children，挂在 AppLayout 里的话它们会随之卸载 —— 那样锁屏状态下点窗口关闭按钮

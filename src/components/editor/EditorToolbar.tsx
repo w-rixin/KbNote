@@ -2,52 +2,7 @@ import { Fragment, useState, useCallback, useEffect, useMemo, useReducer } from 
 import type { Editor } from "@tiptap/react";
 import { Button, Divider, Tooltip, Modal, Input, message, Dropdown, Select, ColorPicker } from "antd";
 import type { MenuProps } from "antd";
-import {
-  Bold,
-  Italic,
-  Underline,
-  Highlighter,
-  Code,
-  Superscript as SuperscriptIcon,
-  Subscript as SubscriptIcon,
-  IndentIncrease,
-  IndentDecrease,
-  Eraser,
-  Paintbrush,
-  Baseline,
-  PaintBucket,
-  Lightbulb,
-  ChevronsUpDown,
-  List,
-  ListOrdered,
-  ListTodo,
-  Quote,
-  CodeSquare,
-  Sigma,
-  Calculator,
-  Minus,
-  Scissors,
-  Undo2,
-  Redo2,
-  Link as LinkIcon,
-  ImagePlus,
-  Captions,
-  Film,
-  PenTool,
-  Globe,
-  Paperclip,
-  MapPin,
-  Table as TableIcon,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Columns2,
-  Columns3,
-  Columns4,
-  ChevronDown,
-  Search,
-  ListX,
-} from "lucide-react";
+import { Bold, Italic, Underline, Highlighter, Code, Superscript as SuperscriptIcon, Subscript as SubscriptIcon, IndentIncrease, IndentDecrease, Eraser, Paintbrush, Baseline, PaintBucket, Lightbulb, ChevronsUpDown, List, ListOrdered, ListTodo, Quote, CodeSquare, Sigma, Calculator, Minus, Scissors, Undo2, Redo2, Link as LinkIcon, ImagePlus, Captions, Paperclip, Table as TableIcon, AlignLeft, AlignCenter, AlignRight, Columns2, Columns3, Columns4, ChevronDown, Search, ListX } from "lucide-react";
 import { hasManualNumber, stripManualNumber } from "@/lib/headingNumber";
 import {
   cleanText,
@@ -56,7 +11,7 @@ import {
 } from "@/lib/editorCleanup";
 import { open } from "@tauri-apps/api/dialog";
 import { toKbAsset, toKbAssetHref } from "@/lib/assetUrl";
-import { attachmentApi, imageApi, noteApi, systemApi, videoApi } from "@/lib/api";
+import { attachmentApi, imageApi, noteApi, systemApi } from "@/lib/api";
 import { extractFirstUrl } from "@/lib/extractUrl";
 import {
   EDITOR_FONT_LABELS,
@@ -410,44 +365,6 @@ export function EditorToolbar({ editor, noteId, ensureNoteId, onOpenSearch }: To
   /** 与 insertImage 对称：从文件选择器导入视频走 saveFromPath（零拷贝），
    *  插入 video node。复用 TiptapEditor 已有的 VideoNode 渲染。
    *  视频文件大（GB 级），用 saveFromPath 而非 base64 上传，避免主进程内存爆。 */
-  async function insertVideo() {
-    let effectiveNoteId = noteId;
-    if (!effectiveNoteId && ensureNoteId) {
-      try {
-        effectiveNoteId = await ensureNoteId();
-      } catch (e) {
-        message.error(`视频插入失败: ${e}`);
-        return;
-      }
-    }
-    if (!effectiveNoteId) {
-      message.warning("请先保存笔记后再插入视频");
-      return;
-    }
-    const selected = await open({
-      multiple: true,
-      filters: [
-        {
-          name: "视频",
-          extensions: ["mp4", "mov", "webm", "m4v", "ogv", "mkv", "avi"],
-        },
-      ],
-    });
-    if (!selected) return;
-    const paths = Array.isArray(selected) ? selected : [selected];
-    for (const filePath of paths) {
-      try {
-        const relPath = await videoApi.saveFromPath(effectiveNoteId, filePath);
-        editor.chain().focus().insertContent({
-          type: "video",
-          attrs: { src: toKbAsset(relPath), id: Math.random().toString(36).slice(2, 10) },
-        }).run();
-      } catch (e) {
-        message.error(`视频插入失败: ${e}`);
-      }
-    }
-  }
-
   /** 嵌入网络视频：解析 URL → iframe 节点。
    *  与 insertVideo 不同，这里不落本地文件，纯靠 iframe 在线播放。
    *  支持 B站 / YouTube / 腾讯视频 / 优酷（详见 embedVideoProviders.ts）。 */
@@ -554,22 +471,6 @@ export function EditorToolbar({ editor, noteId, ensureNoteId, onOpenSearch }: To
   }
 
   /** 打开"插入时间戳"弹窗：自动选中第一个视频 */
-  function openTimestampModal() {
-    const videos = collectVideosInDoc();
-    if (videos.length === 0) {
-      message.warning("当前笔记还没有视频，请先插入视频");
-      return;
-    }
-    const valid = videos.filter((v) => v.id);
-    if (valid.length === 0) {
-      message.warning("视频缺少 ID。请重新打开此笔记触发自动补 ID 后再试");
-      return;
-    }
-    setTsVideoId(valid[0].id);
-    setTsTimeText("00:00");
-    setTsModalOpen(true);
-  }
-
   /** 弹窗确认：解析 mm:ss / hh:mm:ss → 秒数 → insertVideoTimestamp */
   function handleTimestampConfirm() {
     const seconds = parseTimeToSeconds(tsTimeText);
@@ -1173,25 +1074,7 @@ export function EditorToolbar({ editor, noteId, ensureNoteId, onOpenSearch }: To
         action: openCaptionModal,
         isActive: () => editor.isActive("imageResize"),
       },
-      {
-        icon: <Film size={15} />,
-        title: "插入视频",
-        action: insertVideo,
-      },
-      {
-        icon: <PenTool size={15} />,
-        title: "插入白板（画流程图 / 草图，正文里显示为图片，可随时点开再改）",
-        action: () => editor.chain().focus().insertWhiteboard().run(),
-      },
-      {
-        icon: <Globe size={15} />,
-        title: "嵌入网络视频（B站 / YouTube / 腾讯 / 优酷）",
-        action: () => {
-          setEmbedUrlInput("");
-          setEmbedModalOpen(true);
-        },
-      },
-      {
+{
         icon: <Scissors size={15} />,
         title: "剪藏网页正文到这里（可直接粘贴带标题的整段分享文本）",
         action: () => {
@@ -1199,12 +1082,7 @@ export function EditorToolbar({ editor, noteId, ensureNoteId, onOpenSearch }: To
           setClipModalOpen(true);
         },
       },
-      {
-        icon: <MapPin size={15} />,
-        title: "插入视频时间戳",
-        action: openTimestampModal,
-      },
-      {
+{
         icon: <Paperclip size={15} />,
         title: "插入附件（PDF/Office/ZIP 等）",
         action: insertAttachment,

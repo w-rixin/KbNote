@@ -1,45 +1,9 @@
 import type { Editor, Range } from "@tiptap/core";
 import { message } from "antd";
 import { open } from "@tauri-apps/api/dialog";
-import {
-  Heading1,
-  Heading2,
-  Heading3,
-  Heading4,
-  Pilcrow,
-  List,
-  ListOrdered,
-  ListTodo,
-  Quote,
-  Minus,
-  Code2,
-  Table as TableIcon,
-  ChevronRight,
-  Info,
-  Lightbulb,
-  AlertTriangle,
-  ShieldAlert,
-  Link2,
-  GitBranch,
-  Sigma,
-  Calculator,
-  ImagePlus,
-  Film,
-  Globe,
-  Columns2,
-  Columns3,
-  Columns4,
-  Calendar,
-  CalendarDays,
-  CalendarClock,
-  Clock,
-  Database,
-  PenTool,
-  type LucideIcon,
-} from "lucide-react";
-import { imageApi, videoApi } from "@/lib/api";
+import { Heading1, Heading2, Heading3, Heading4, Pilcrow, List, ListOrdered, ListTodo, Quote, Minus, Code2, Table as TableIcon, ChevronRight, Info, Lightbulb, AlertTriangle, ShieldAlert, Link2, GitBranch, Sigma, Calculator, ImagePlus, Columns2, Columns3, Columns4, Calendar, CalendarDays, CalendarClock, Clock, type LucideIcon } from "lucide-react";
+import { imageApi } from "@/lib/api";
 import { toKbAsset } from "@/lib/assetUrl";
-import { parseEmbedUrl, SUPPORTED_PROVIDERS } from "./embedVideoProviders";
 
 export interface SlashCommandItem {
   /** 唯一 key，用于 React 列表渲染 */
@@ -267,85 +231,8 @@ const BASIC_SLASH_ITEMS: SlashCommandItem[] = [
   },
 
   // ─── 内嵌白板 ───
-  {
-    key: "whiteboard",
-    title: "白板",
-    subtitle: "在笔记里插入一块可编辑的画布，平时显示为图片",
-    group: "插入",
-    icon: PenTool,
-    keywords: ["白板", "画板", "画布", "whiteboard", "draw", "excalidraw", "bb", "hb"],
-    command: ({ editor, range }) => {
-      editor.chain().focus().deleteRange(range).insertWhiteboard().run();
-    },
-  },
-
-  // ─── 数据视图（v1.12 引入） ───
-  {
-    key: "dataview-recent-notes",
-    title: "数据视图：最近笔记",
-    subtitle: "动态展示最近修改的笔记列表",
-    group: "数据视图",
-    icon: Database,
-    keywords: ["数据视图", "dataview", "最近", "笔记", "sjsq", "zjbj"],
-    command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertDataview({ kind: "recent-notes", limit: 10 })
-        .run();
-    },
-  },
-  {
-    key: "dataview-pending-tasks",
-    title: "数据视图：未完成任务",
-    subtitle: "动态展示所有未完成任务",
-    group: "数据视图",
-    icon: Database,
-    keywords: ["数据视图", "dataview", "任务", "未完成", "todo", "wwc"],
-    command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertDataview({ kind: "pending-tasks", limit: 10 })
-        .run();
-    },
-  },
-  {
-    key: "dataview-notes-by-tag",
-    title: "数据视图：按标签筛选笔记",
-    subtitle: "插入后点齿轮选标签",
-    group: "数据视图",
-    icon: Database,
-    keywords: ["数据视图", "dataview", "标签", "tag", "bq"],
-    command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertDataview({ kind: "notes-by-tag", limit: 10 })
-        .run();
-    },
-  },
-  {
-    key: "dataview-tasks-by-project",
-    title: "数据视图：项目下的任务",
-    subtitle: "插入后点齿轮选项目",
-    group: "数据视图",
-    icon: Database,
-    keywords: ["数据视图", "dataview", "项目", "project", "xm"],
-    command: ({ editor, range }) => {
-      editor
-        .chain()
-        .focus()
-        .deleteRange(range)
-        .insertDataview({ kind: "tasks-by-project", limit: 10 })
-        .run();
-    },
-  },
-
-  // ─── 分栏 ───
+// ─── 数据视图（v1.12 引入） ───
+// ─── 分栏 ───
   {
     key: "columns-2",
     title: "两栏",
@@ -652,93 +539,7 @@ function createMediaSlashItems(
         }
       },
     },
-    {
-      key: "video",
-      title: "本地视频",
-      subtitle: "从本地选择视频插入",
-      group: "媒体",
-      icon: Film,
-      keywords: ["视频", "video", "media", "sp"],
-      command: async ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).run();
-
-        const noteId = await resolveNoteId(opts);
-        if (!noteId) return;
-
-        const selected = await open({
-          multiple: true,
-          filters: [
-            {
-              name: "视频",
-              extensions: ["mp4", "mov", "webm", "m4v", "ogv", "mkv", "avi"],
-            },
-          ],
-        });
-        if (!selected) return;
-        const paths = Array.isArray(selected) ? selected : [selected];
-        for (const filePath of paths) {
-          try {
-            const relPath = await videoApi.saveFromPath(noteId, filePath);
-            editor
-              .chain()
-              .focus()
-              .insertContent({
-                type: "video",
-                attrs: {
-                  src: toKbAsset(relPath),
-                  id: Math.random().toString(36).slice(2, 10),
-                },
-              })
-              .run();
-          } catch (e) {
-            message.error(`视频插入失败: ${e}`);
-          }
-        }
-      },
-    },
-    {
-      key: "embedVideo",
-      title: "嵌入网络视频",
-      subtitle: `粘贴 ${SUPPORTED_PROVIDERS} 链接`,
-      group: "媒体",
-      icon: Globe,
-      keywords: [
-        "嵌入视频",
-        "embed",
-        "video",
-        "online",
-        "youtube",
-        "bilibili",
-        "wlsp",
-        "qrsp",
-      ],
-      command: async ({ editor, range }) => {
-        editor.chain().focus().deleteRange(range).run();
-
-        if (!opts.requestEmbedUrl) {
-          message.warning("当前编辑器未配置嵌入视频弹窗");
-          return;
-        }
-        const raw = await opts.requestEmbedUrl();
-        if (!raw) return;
-        const parsed = parseEmbedUrl(raw);
-        if (!parsed) {
-          message.error(`无法识别的链接，目前支持：${SUPPORTED_PROVIDERS}`);
-          return;
-        }
-        editor
-          .chain()
-          .focus()
-          .setEmbedVideo({
-            src: parsed.embedUrl,
-            originalUrl: parsed.originalUrl,
-            provider: parsed.provider,
-          })
-          .run();
-        message.success(`已嵌入${parsed.providerName}视频`);
-      },
-    },
-  ];
+];
 }
 
 /**

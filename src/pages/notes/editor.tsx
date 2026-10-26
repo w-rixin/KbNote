@@ -25,7 +25,7 @@ import {
   App as AntdApp,
   theme as antdTheme,
 } from "antd";
-import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, FileText as FileTextIcon, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, Lock, Unlock, MessageSquare, ListTree, Network, ExternalLink, BookOpen, FilePen, Presentation, Printer, Code2, History } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, FileText as FileTextIcon, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, Lock, Unlock, ListTree, BookOpen, FilePen, Printer, Code2, History } from "lucide-react";
 import { CloseCircleFilled } from "@ant-design/icons";
 import { useAppStore, EDITOR_FONT_DEFAULTS } from "@/store";
 import { useCtrlWheelZoom } from "@/hooks/useCtrlWheelZoom";
@@ -37,7 +37,6 @@ import {
   copyEditorContentForWord,
   editorDomToSelfContainedHtml,
 } from "@/lib/printNote";
-import { VaultModal } from "@/components/vault/VaultModal";
 import { open as openDialog, save } from "@tauri-apps/api/dialog";
 import { convertFileSrc } from "@tauri-apps/api/tauri";
 import { open, revealItemInDir } from "@/lib/tauriShell";
@@ -47,14 +46,11 @@ import { relativeTime, stripHtml } from "@/lib/utils";
 import { buildTagTreeSelectData } from "@/lib/tagTree";
 import { TiptapEditor, MarkdownSourceEditor } from "@/components/editor";
 import { showSourceModeIntroOnce } from "@/lib/sourceModeIntro";
-import { LinkStatusBar } from "@/components/editor/LinkStatusBar";
 import { EditorOutline } from "@/components/editor/EditorOutline";
 import { EditorStats } from "@/components/editor/EditorStats";
 import { TagColorPicker } from "@/components/TagColorPicker";
 import { MicButton } from "@/components/MicButton";
-import { NoteAiDrawer } from "@/components/ai/NoteAiDrawer";
 import { MindMapView } from "@/components/notes/MindMapView";
-import { SlideshowView } from "@/components/notes/SlideshowView";
 import type { Note, Tag, Folder, NoteLink } from "@/types";
 import { accelToKeys, findShortcut } from "@/lib/shortcuts/registry";
 
@@ -66,7 +62,6 @@ const CURRENT_WINDOW_LABEL = (() => {
   try { return getCurrentWindow().label; }
   catch { return ""; }
 })();
-const IS_POPOUT_WINDOW = CURRENT_WINDOW_LABEL.startsWith("popout-");
 
 /** 去 markdown 转义：把 `\X`（X 为非字母数字）中的 `\` 丢弃。
  *
@@ -799,8 +794,6 @@ function DesktopNoteEditorPage() {
   const [historyOpen, setHistoryOpen] = useState(false);
   /** 思维导图视图：在编辑器右侧以 flex 分栏方式渲染（不是浮层） */
   const [mindMapOpen, setMindMapOpen] = useState(false);
-  /** 幻灯片演示模式：fixed 全屏覆盖，按 `<hr>` 分页 */
-  const [slideshowOpen, setSlideshowOpen] = useState(false);
   /** 思维导图分栏宽度（像素，持久化到 localStorage 跨笔记记忆） */
   const [mindMapWidth, setMindMapWidth] = useState<number>(() => {
     const saved = Number(localStorage.getItem("editor.mindMapWidth"));
@@ -830,7 +823,7 @@ function DesktopNoteEditorPage() {
   // 反向链接状态
   const [backlinks, setBacklinks] = useState<NoteLink[]>([]);
   /** 底部链接状态条的刷新信号：保存完成（出链已落库）后自增 */
-  const [linkRefreshTick, setLinkRefreshTick] = useState(0);
+  const [, setLinkRefreshTick] = useState(0);
 
   // 导出菜单受控状态：让 Ctrl+Shift+E 可以唤起这个 Dropdown
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
@@ -952,9 +945,9 @@ function DesktopNoteEditorPage() {
   const [disambigTitle, setDisambigTitle] = useState("");
 
   // 右侧 AI 抽屉（方案 A：编辑笔记时不离页问 AI；伴生对话存到 ai_conversations）
-  const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
+  const [, setAiDrawerOpen] = useState(false);
   // 选段触发（方案 C）：携带的选中文本，抽屉里展示为引用 chip 而不是塞输入框
-  const [aiSelection, setAiSelection] = useState<string | undefined>(undefined);
+  const [, setAiSelection] = useState<string | undefined>(undefined);
 
   // PDF 预览 Modal 状态
   const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
@@ -1636,7 +1629,7 @@ function DesktopNoteEditorPage() {
    * 取消加密时：后端解密得到原文并写回 content。
    * 加密/取消后都重新 loadNote() 拿最新态。
    */
-  const [vaultModal, setVaultModal] = useState<{
+  const [, setVaultModal] = useState<{
     open: boolean;
     mode: "setup" | "unlock";
   }>({ open: false, mode: "unlock" });
@@ -2341,36 +2334,6 @@ function DesktopNoteEditorPage() {
               disabled={mindMapOpen}
             />
           </Tooltip>
-          <Tooltip title="思维导图（只读视图）">
-            <Button
-              icon={<Network size={16} />}
-              onClick={() => setMindMapOpen(true)}
-            />
-          </Tooltip>
-          <Tooltip title="幻灯片演示（用 --- 分页）">
-            <Button
-              icon={<Presentation size={16} />}
-              onClick={() => setSlideshowOpen(true)}
-            />
-          </Tooltip>
-          {/* popout 窗口里再点这个按钮没有意义（同 id 只会前置已存在窗口），直接隐藏 */}
-          {!IS_POPOUT_WINDOW && (
-            <Tooltip title="新窗口打开">
-              <Button
-                icon={<ExternalLink size={16} />}
-                onClick={async () => {
-                  if (!noteId) return;
-                  // 弹新窗口前先把未保存内容落库，避免 pop-out 看到老版本
-                  if (dirty) await handleSave(true);
-                  try {
-                    await noteApi.openInNewWindow(noteId);
-                  } catch (e) {
-                    message.error(`打开新窗口失败：${e}`);
-                  }
-                }}
-              />
-            </Tooltip>
-          )}
           {/* 原先这里有个 Link2 徽标按钮，作用只是「滚动到正文底部的反链面板」——
               本质是个滚动快捷方式而非功能入口，语义绕、还占工具栏位置。
               现在底部有常驻的链接状态条（链出/链入/断链，点击即看明细），它就没必要了。
@@ -2550,17 +2513,6 @@ function DesktopNoteEditorPage() {
               </Space.Compact>
             );
           })()}
-          <Tooltip title="问 AI">
-            <Button
-              icon={<MessageSquare size={16} />}
-              onClick={async () => {
-                // 先确保未保存内容已落库，否则 AI 拿到的还是老正文
-                if (dirty) await handleSave(true);
-                setAiSelection(undefined);
-                setAiDrawerOpen(true);
-              }}
-            />
-          </Tooltip>
           <Popconfirm title="确认删除此笔记？" onConfirm={handleDelete}>
             <Button danger icon={<Trash2 size={16} />}>
               删除
@@ -2886,17 +2838,7 @@ function DesktopNoteEditorPage() {
           会被推到离视觉底部很远的地方（顶部那个 Link2 按钮当初就是为此打的补丁）。
           saveTick 在保存完成后自增：出链是保存时才同步进 note_links 的，
           不刷新的话刚写完 [[X]] 计数还是旧的。 */}
-      <LinkStatusBar
-        noteId={Number.isFinite(noteId) ? noteId : undefined}
-        refreshKey={linkRefreshTick}
-        /* 大纲列宽 + 6px 分隔条：状态条据此让出同样的空间，左右沿才对得上卡片 */
-        outlineSpace={effectiveOutlineVisible ? outlineWidth + 6 : 0}
-        outlinePos={effectiveOutlineVisible ? outlinePosition : undefined}
-        onNavigate={async (id) => {
-          await ensureSavedBeforeNavigate();
-          navigate(`/notes/${id}`);
-        }}
-      />
+
 
       {/* 历史版本抽屉：开过一次才挂载，没点过的用户不用为它买单 */}
       {historyOpen && (
@@ -2923,12 +2865,7 @@ function DesktopNoteEditorPage() {
       )}
 
       {/* 幻灯片演示：fixed 全屏覆盖，按 <hr> 分页 */}
-      <SlideshowView
-        open={slideshowOpen}
-        onClose={() => setSlideshowOpen(false)}
-        html={content}
-        title={title}
-      />
+
 
       {/* PDF 原文件预览 */}
       <Modal
@@ -3045,29 +2982,14 @@ function DesktopNoteEditorPage() {
         />
       </Modal>
 
-      <NoteAiDrawer
-        noteId={noteId}
-        open={aiDrawerOpen}
-        onClose={() => setAiDrawerOpen(false)}
-        pendingSelection={aiSelection}
-      />
 
-      <VaultModal
-        open={vaultModal.open}
-        mode={vaultModal.mode}
-        onClose={() => setVaultModal((s) => ({ ...s, open: false }))}
-        onSuccess={() => {
-          message.info("保险库已就绪，再次点击锁图标即可加密此笔记");
-        }}
-      />
+
+
     </div>
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileNoteEditor } from "./MobileNoteEditor";
-
+/** 笔记编辑页。原 kb 按 isMobile 切换；移动端已随删减移除。 */
 export default function NoteEditorPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileNoteEditor /> : <DesktopNoteEditorPage />;
+  return <DesktopNoteEditorPage />;
 }

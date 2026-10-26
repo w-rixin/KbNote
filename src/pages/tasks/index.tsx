@@ -1648,10 +1648,7 @@ function TaskRow({
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileTasks } from "./MobileTasks";
-
+/** 任务页。移动端已随删减移除，固定渲染桌面版。 */
 export default function TasksPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileTasks /> : <DesktopTasksPage />;
+  return <DesktopTasksPage />;
 }

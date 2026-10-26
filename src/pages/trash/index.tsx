@@ -402,10 +402,7 @@ function DesktopTrashPage() {
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileTrash } from "./MobileTrash";
-
+/** 回收站页。移动端已随删减移除，固定渲染桌面版。 */
 export default function TrashPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileTrash /> : <DesktopTrashPage />;
+  return <DesktopTrashPage />;
 }

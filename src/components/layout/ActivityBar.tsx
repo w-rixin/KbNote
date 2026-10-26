@@ -2,7 +2,6 @@ import { cloneElement, isValidElement, startTransition, useEffect, useMemo, useS
 import { useLocation, useNavigate } from "react-router-dom";
 import { Tooltip, Badge, theme as antdTheme, message } from "antd";
 import { hiddenPinApi } from "@/lib/api";
-import { HiddenPinUnlockModal } from "@/components/hidden/HiddenPinUnlockModal";
 import {
   Home,
   NotebookText,
@@ -148,7 +147,7 @@ export function ActivityBar() {
   const appLockEnabled = useAppStore((s) => s.appLockEnabled);
   const lockAppNow = useAppStore((s) => s.lockAppNow);
   const showLabels = useAppStore((s) => s.activityBarShowLabels);
-  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [, setUnlockOpen] = useState(false);
 
   /** 是否显示某项：核心永远显示；可选项看用户是否在设置里启用 */
   const isVisible = (item: ActivityItem) =>
@@ -369,15 +368,7 @@ export function ActivityBar() {
         </Tooltip>
       )}
       {BOTTOM_ITEMS.filter(isVisible).map(renderItem)}
-      <HiddenPinUnlockModal
-        open={unlockOpen}
-        onSuccess={() => {
-          setUnlockOpen(false);
-          const hiddenItem = BOTTOM_ITEMS.find((i) => i.view === "hidden");
-          if (hiddenItem) navigateToView(hiddenItem);
-        }}
-        onCancel={() => setUnlockOpen(false)}
-      />
+
     </nav>
   );
 }

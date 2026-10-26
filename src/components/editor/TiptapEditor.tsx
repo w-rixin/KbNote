@@ -262,7 +262,6 @@ import { EmbedVideo } from "./EmbedVideoNode";
 import { AllowFileLink } from "./AllowFileLink";
 import { Callout } from "./Callout";
 import { DataviewBlock } from "./DataviewBlock";
-import { WhiteboardBlock } from "./WhiteboardBlock";
 import { Toggle, ToggleSummary, ToggleContent } from "./Toggle";
 import { Columns, Column } from "./Columns";
 import "tippy.js/dist/tippy.css";
@@ -1651,11 +1650,6 @@ export function TiptapEditor({
       EmbedVideo,
       Callout,
       DataviewBlock,
-      // 内嵌白板块：getNoteId 必须函数式取（同 SlashCommand），
-      // 否则切笔记后白板资源会存进上一篇的目录
-      WhiteboardBlock.configure({
-        getNoteId: () => noteIdRef.current,
-      }),
       Toggle,
       ToggleSummary,
       ToggleContent,

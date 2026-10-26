@@ -21,9 +21,8 @@ import {
   Slider,
   ColorPicker,
 } from "antd";
-import { SyncOutlined, PlusOutlined, CheckCircleFilled, CheckCircleOutlined } from "@ant-design/icons";
+import { PlusOutlined, CheckCircleFilled, CheckCircleOutlined } from "@ant-design/icons";
 import { Trash2, Pencil, FolderInput, FolderOutput, LayoutTemplate, Power, ExternalLink, Type, Zap, Share2, Download, PanelLeft, Palette, Image as ImageIcon, CalendarCheck, Maximize2, ListRestart } from "lucide-react";
-import { DailyImportModal } from "@/components/DailyImportModal";
 import { invoke } from "@tauri-apps/api/tauri";
 import dayjs, { type Dayjs } from "dayjs";
 import { TimePicker } from "antd";
@@ -60,25 +59,12 @@ import {
 import { importWordFiles } from "@/lib/wordImport";
 import { beginImportJob, beginTrackedImportJob } from "@/lib/importJob";
 import { Checkbox } from "antd";
-import { useUpdater } from "@/components/updater/UpdaterProvider";
 import { RecommendCards } from "@/components/ui/RecommendCards";
-import { SyncTabs } from "@/components/settings/SyncTabs";
-import { AsrSection } from "@/components/settings/AsrSection";
 import { DataDirSection } from "@/components/settings/DataDirSection";
-import { FeatureModulesSection } from "@/components/settings/FeatureModulesSection";
-import OrphanAssetsPanel from "@/components/settings/OrphanAssetsPanel";
-import { HiddenPinSection } from "@/components/hidden/HiddenPinSection";
-import { AppLockSection } from "@/components/applock/AppLockSection";
 import { ShortcutsSection } from "@/components/settings/ShortcutsSection";
 import { EditorHighlightShortcutRow } from "@/components/settings/EditorHighlightShortcutRow";
-import { MCPServerSection } from "@/components/settings/MCPServerSection";
-import { OcrSection } from "@/components/settings/OcrSection";
-import { ReminderSoundSection } from "@/components/settings/ReminderSoundSection";
 import { SnapshotSection } from "@/components/settings/SnapshotSection";
-import { WebClipJinaKeySetting } from "@/components/settings/WebClipJinaKeySetting";
 import { TiptapEditor } from "@/components/editor";
-import { ShareConfigModal } from "@/components/config-share/ShareConfigModal";
-import { ImportConfigModal } from "@/components/config-share/ImportConfigModal";
 import { exportAiModel, type Envelope } from "@/lib/configShare";
 import {
   getOpenMdPreference,
@@ -220,9 +206,7 @@ function SettingsAnchorNav() {
 }
 
 function DesktopSettingsPage() {
-  const [checking, setChecking] = useState(false);
-  const updater = useUpdater();
-  const [appVersion, setAppVersion] = useState("0.1.0");
+  const [, setAppVersion] = useState("0.1.0");
 
   // AI 模型状态
   const [models, setModels] = useState<AiModel[]>([]);
@@ -259,8 +243,8 @@ function DesktopSettingsPage() {
   /** 行内"测试"按钮 loading 锁：值为正在测试的 model.id；Modal 内的测试按钮锁用 -1 */
   const [testingModelId, setTestingModelId] = useState<number | null>(null);
   // 配置分享 / 导入
-  const [shareEnv, setShareEnv] = useState<Envelope | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  const [, setShareEnv] = useState<Envelope | null>(null);
+  const [, setImportOpen] = useState(false);
 
   // 导入状态
   const [importing, setImporting] = useState(false);
@@ -273,7 +257,7 @@ function DesktopSettingsPage() {
   const [scanModalOpen, setScanModalOpen] = useState(false);
   const [scanning, setScanning] = useState(false);
   /** 「整理历史日记」弹窗（与日记页顶部按钮共用同一个组件） */
-  const [showDailyConvert, setShowDailyConvert] = useState(false);
+  const [, setShowDailyConvert] = useState(false);
   /** 扫描时用户选的根目录（后端用来按相对路径重建文件夹树） */
   const [scanRootPath, setScanRootPath] = useState<string | null>(null);
   /** 是否在目标下多套一层"源根目录名"作为导入批次根 */
@@ -343,22 +327,7 @@ function DesktopSettingsPage() {
     }
   }
 
-  async function handleCheckUpdate() {
-    if (!updater) return;
-    setChecking(true);
-    try {
-      // 走全局更新状态机：有更新会自动弹出（并已在后台开始下载）的全局 UpdateModal，
-      // 这里只需对「已是最新 / 检查失败」给出反馈。
-      const r = await updater.checkManually();
-      if (r.error) {
-        message.warning(`检查更新失败: ${r.error}`);
-      } else if (!r.hasUpdate) {
-        message.success("当前已是最新版本");
-      }
-    } finally {
-      setChecking(false);
-    }
-  }
+
 
   async function loadFolders() {
     try {
@@ -1516,25 +1485,7 @@ function DesktopSettingsPage() {
           <Text type="secondary">应用配置与模型服务管理</Text>
         </div>
 
-      <Card id="settings-update" title="软件更新">
-        <Space wrap>
-          <Button
-            icon={<SyncOutlined spin={checking} />}
-            onClick={handleCheckUpdate}
-            loading={checking}
-          >
-            检查更新
-          </Button>
-          <Text type="secondary">当前版本: {appVersion}</Text>
-          <Button
-            type="link"
-            size="small"
-            onClick={() => openUrl("https://kb.ruoyi.plus/")}
-          >
-            官网 https://kb.ruoyi.plus/
-          </Button>
-        </Space>
-      </Card>
+      
 
       <Card
         id="settings-startup"
@@ -1695,12 +1646,12 @@ function DesktopSettingsPage() {
         </div>
       </Card>
 
-      <FeatureModulesSection />
 
-      <AppLockSection />
+
+
 
       <div id="settings-hidden-pin">
-        <HiddenPinSection />
+
       </div>
 
       <div id="settings-shortcuts">
@@ -2612,7 +2563,7 @@ function DesktopSettingsPage() {
           </div>
 
           {/* 提示音：音色 / 音量 / 连响遍数 / 自定义音频（跨窗口配置存 app_config） */}
-          <ReminderSoundSection />
+
         </Card>
       </div>
 
@@ -2766,7 +2717,7 @@ function DesktopSettingsPage() {
         </div>
 
         {/* 网页剪藏的可选兜底 Key（默认直连原网页，不需要配） */}
-        <WebClipJinaKeySetting />
+
 
         {/* 进度条已挪到右下角悬浮条（ImportStatusDock）—— 页内再放一个就成了两处同时跳，
             而且切走设置页就看不见了。这里只留导入完成后的结果 / 错误清单。 */}
@@ -2928,7 +2879,7 @@ function DesktopSettingsPage() {
       </Card>
 
       {/* 语音识别（ASR）：阿里云百炼 DashScope，通过抽象层支持未来扩展 */}
-      <AsrSection />
+
 
       {/* 模板管理 */}
       <Card
@@ -3020,14 +2971,14 @@ function DesktopSettingsPage() {
       </div>
 
       <div id="settings-sync">
-        <SyncTabs />
+
       </div>
 
       {/* MCP 服务器：接入 Claude Desktop / Cursor / Cherry Studio */}
-      <MCPServerSection />
+
 
       {/* #9 本地 OCR：图片 / 扫描件 PDF 识别 */}
-      <OcrSection />
+
 
       {/* 维护：历史版本用量与清理 */}
       <div id="settings-snapshots">
@@ -3046,7 +2997,7 @@ function DesktopSettingsPage() {
         }
         className="mb-4"
       >
-        <OrphanAssetsPanel />
+
       </Card>
 
       <Card id="settings-community" title="作者 & 社区">
@@ -3541,20 +3492,9 @@ function DesktopSettingsPage() {
       </Modal>
 
 
-      <ShareConfigModal
-        open={shareEnv !== null}
-        onClose={() => setShareEnv(null)}
-        envelope={shareEnv}
-      />
-      <ImportConfigModal
-        open={importOpen}
-        onClose={() => setImportOpen(false)}
-        onImported={() => void loadModels()}
-      />
-      <DailyImportModal
-        open={showDailyConvert}
-        onClose={() => setShowDailyConvert(false)}
-      />
+
+
+
       </div>
     </div>
   );
