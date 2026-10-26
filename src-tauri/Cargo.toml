@@ -114,7 +114,6 @@ tauri = { version = "1", features = [
   "window-all",
   "http-request",
   "shell-open",
-  "updater",
   "fs-read-file",
   "fs-write-file",
   "fs-read-dir",

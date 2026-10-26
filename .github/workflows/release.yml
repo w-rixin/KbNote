@@ -178,8 +178,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9
 
       - name: Install Linux system dependencies
         # 匹配 x86_64（ubuntu-22.04）与 aarch64（ubuntu-22.04-arm）两条 Linux 矩阵。
