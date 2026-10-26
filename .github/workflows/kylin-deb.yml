@@ -48,6 +48,10 @@ on:
 
 jobs:
   build-deb:
+    # 上传 deb 到 Release 需要写权限。不显式声明就吃仓库默认设置，
+    # 而默认值很可能是 read —— 表现为 gh/curl 上传 403，且错误信息很含糊。
+    permissions:
+      contents: write
     # 🔴 为什么是「22.04 的机器 + 20.04 的容器」（2026-10-20 目标机实锤）：
     #    run 9 的 deb 装到麒麟 V10 上一启动就崩：
     #        /usr/bin/knowledge-base: error while loading shared libraries:
@@ -636,17 +640,53 @@ jobs:
           DEB: ${{ steps.deb.outputs.path }}
         run: |
           set -e
-          # 🔴 存在性校验**不能**用 `gh release view <tag>`：它走 REST 的
-          #    /releases/tags/{tag} 端点，而 **draft release 在该端点上查不到**
-          #    （实测返回 404，尽管它确实存在、且 /releases 列表里能看到）。
-          #    偏偏本工作流要上传的 Release 正是 release.yml 预创建的 draft。
-          #    改用 /releases 列表按 tag_name 精确匹配 —— 该端点能列出 draft。
-          if ! gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
-                --jq '.[].tag_name' | grep -qx "$RELEASE_TAG"; then
+          # 🔴 整个 job 跑在 ubuntu:20.04 **容器**里，而 `gh` 是 Actions 注入在
+          #    runner **主机**上的（容器只挂载到 /__e/node20 等少数路径），
+          #    所以容器内根本没有 gh。首跑时 `gh api` 直接 127（command not
+          #    found），被上层逻辑误读成「Release 不存在」，白排查一轮。
+          #    改用 curl + jq —— 两者都在装工具链那一步装好了。
+          API="https://api.github.com/repos/$GITHUB_REPOSITORY"
+          api_get() {
+            curl -fsSL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$1"
+          }
+
+          # 🔴 存在性校验也不能用 /releases/tags/{tag}：draft release 在该端点
+          #    查不到（实测 404，尽管它确实存在、且 /releases 列表里能看到），
+          #    而我们要上传的正是 release.yml 预创建的 draft。
+          #    用 /releases 列表按 tag_name 精确匹配 —— 该端点能列出 draft。
+          if ! api_get "$API/releases?per_page=100" | jq -r '.[].tag_name' \
+               | grep -qx "$RELEASE_TAG"; then
             echo "::error::[release] Release $RELEASE_TAG 不存在。先跑一次 release.yml（它的 prepare-release 会预创建 draft），再回到本工作流填这个 tag 重跑。"
             exit 1
           fi
-          echo "Release $RELEASE_TAG 已存在，上传 $(basename "$DEB") ($(stat -c %s "$DEB") bytes)"
-          # --clobber：同名资产已存在时覆盖（同一版本重跑很常见）
-          gh release upload "$RELEASE_TAG" "$DEB" --repo "$GITHUB_REPOSITORY" --clobber
-          echo "已上传：$(basename "$DEB")"
+
+          NAME="$(basename "$DEB")"
+          echo "Release $RELEASE_TAG 已存在，上传 $NAME ($(stat -c %s "$DEB") bytes)"
+
+          # 同名资产先删（等价 gh release upload --clobber，重跑同一版本时必需）
+          ASSET_ID=$(api_get "$API/releases?per_page=100" \
+            | jq -r --arg t "$RELEASE_TAG" --arg n "$NAME" \
+                '.[] | select(.tag_name == $t) | .assets[]? | select(.name == $n) | .id')
+          if [ -n "$ASSET_ID" ]; then
+            echo "发现同名资产 id=$ASSET_ID，先删除再上传"
+            curl -fsS -X DELETE \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "$API/releases/assets/$ASSET_ID" > /dev/null
+          fi
+
+          # upload_url 形如 .../releases/123/assets{?name,label}，去掉模板部分
+          UPLOAD_URL=$(api_get "$API/releases?per_page=100" \
+            | jq -r --arg t "$RELEASE_TAG" \
+                '.[] | select(.tag_name == $t) | .upload_url' | sed 's/{.*}$//')
+
+          curl -f -X POST \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Content-Type: application/vnd.debian.binary-package" \
+            --data-binary @"$DEB" \
+            "$UPLOAD_URL?name=$NAME"
+          echo "已上传：$NAME"
