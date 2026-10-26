@@ -636,7 +636,13 @@ jobs:
           DEB: ${{ steps.deb.outputs.path }}
         run: |
           set -e
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          # 🔴 存在性校验**不能**用 `gh release view <tag>`：它走 REST 的
+          #    /releases/tags/{tag} 端点，而 **draft release 在该端点上查不到**
+          #    （实测返回 404，尽管它确实存在、且 /releases 列表里能看到）。
+          #    偏偏本工作流要上传的 Release 正是 release.yml 预创建的 draft。
+          #    改用 /releases 列表按 tag_name 精确匹配 —— 该端点能列出 draft。
+          if ! gh api "repos/$GITHUB_REPOSITORY/releases" --paginate \
+                --jq '.[].tag_name' | grep -qx "$RELEASE_TAG"; then
             echo "::error::[release] Release $RELEASE_TAG 不存在。先跑一次 release.yml（它的 prepare-release 会预创建 draft），再回到本工作流填这个 tag 重跑。"
             exit 1
           fi
