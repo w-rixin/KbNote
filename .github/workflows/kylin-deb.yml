@@ -201,20 +201,41 @@ jobs:
       #        ... remove the `updater` feature
       #    build() 收到 Err 后直接 std::process::exit(1) → cargo build 失败。
       #    （kylin-v1-check.yml 不碰 conf，所以从来撞不到这条。）
-      - name: Temporarily disable updater (no signing key configured)
+      # ─── 为什么这一步从「强行关掉」改成「断言已删干净」────────────────────
+      # knowledge-base 时期，这一步是 jq + sed 强行关掉 updater（因为仓库没有
+      # 签名私钥，而 tauri.conf.json 里 updater.active = true，Tauri 1.x 在
+      # 有 pubkey 无私钥时会直接 "A public key has been found, but no private
+      # key" 报错）。
+      #
+      # KbNote 是单机离线定位，删减时已把 updater 的三处**一起摘干净**：
+      #   1) tauri.conf.json 里的整个 tauri.updater 块
+      #   2) Cargo.toml 里 tauri 依赖的 "updater" feature
+      #   3) 前端的 UpdaterProvider / UpdateBadge / UpdateModal（P2 删）
+      #
+      # 三者必须一致，否则 tauri-build 的 allowlist 校验
+      #（tauri-build/src/allowlist.rs::check，由 build() 在 line 432 调用）
+      # 会直接 std::process::exit(1)：
+      #   tauri-utils 的 TauriConfig::features() 只在 updater.active == true
+      #   时才产出 "updater"（`if self.updater.active { features.push(...) }`），
+      #   此时若 Cargo.toml 仍带该 feature，即报
+      #   "The `tauri` dependency features on the `Cargo.toml` file does not
+      #    match the allowlist defined under `tauri.conf.json`"。
+      #
+      # 所以这里不再修改任何文件——改了反而制造不一致。只做断言：
+      # 确认仓库里确实没有残留，留个护栏防止以后有人把 updater 加回来一半。
+      - name: Assert updater fully removed (offline single-user app, no signing key)
         run: |
-          jq '.tauri.updater.active = false' src-tauri/tauri.conf.json > /tmp/tauri.conf.json
-          mv /tmp/tauri.conf.json src-tauri/tauri.conf.json
-          # 同步摘 feature。行格式已核实唯一（Cargo.toml:102 `  "updater",`），
-          # 锚定行首行尾防误伤；Cargo.lock 不记录 feature，故无需重新生成锁。
-          sed -i '/^  "updater",$/d' src-tauri/Cargo.toml
-          echo "updater.active = $(jq '.tauri.updater.active' src-tauri/tauri.conf.json)"
-          if grep -n '^  "updater",$' src-tauri/Cargo.toml; then
-            echo "::error::Cargo.toml 的 updater feature 未摘除，build.rs 的 allowlist 校验必失败"
+          set -e
+          if jq -e '.tauri.updater' src-tauri/tauri.conf.json >/dev/null 2>&1; then
+            echo "::error::[updater] tauri.conf.json 仍存在 tauri.updater 块：与 Cargo.toml 的 feature 集不一致会让 tauri-build 的 allowlist 校验 exit 1"
+            jq '.tauri.updater' src-tauri/tauri.conf.json
             exit 1
-          else
-            echo "Cargo.toml 的 updater feature 已摘除"
           fi
+          if grep -nE '^[[:space:]]*"updater",?[[:space:]]*$' src-tauri/Cargo.toml; then
+            echo "::error::[updater] Cargo.toml 仍带 updater feature，删掉它或补回 conf 里的 updater 块（二者必须同进同退）"
+            exit 1
+          fi
+          echo "已确认：tauri.conf.json 无 updater 块，Cargo.toml 无 updater feature"
 
       # ─── 为什么拆成 3 步，而不是一句 `pnpm tauri build` ──────────────
       # `tauri build` 内部依次做三件事：跑 beforeBuildCommand（vite build）→

@@ -226,3 +226,71 @@ jobs:
           path: /tmp/check.log
           retention-days: 3
           if-no-files-found: ignore
+
+      # ─── 为什么必须补这一步（KbNote 删减期的关键回归）───────────────────
+      # KbNote 是从 knowledge-base 整树删出来的，Rust 侧砍掉了 35 个 service、
+      # 23 个 command，但 database/schema.rs 的 64 步迁移链**原样保留**。
+      # 理由：链一旦剪断，任何 v0→v64 之间的老库都升不上来；而用户可能正是
+      # 拿着 kb 的库过来用。代价是链上还挂着大量已删功能的表（ai_models /
+      # cards / whiteboards / sync_* 等）。
+      #
+      # `cargo check` 只能证明"能编过"，证明不了"新装用户第一次启动不会崩"——
+      # 新建库 user_version=0，启动时会把 64 步**全部走一遍**，任何一步引用了
+      # 被删掉的表或模块，表现就是应用起不来。这正是删减期最容易漏的一类回归。
+      #
+      # 所以这里跑真实的 `cargo test --lib`，把 schema 的迁移单测（含
+      # notes.rs 里 `version == SCHEMA_VERSION` 的端到端断言）真正执行掉。
+      # 迁移链本身是纯 SQLite 操作，不依赖 wayland/display，arm runner 可直接跑。
+      - name: cargo test（迁移链与数据库回归）
+        working-directory: ./src-tauri
+        env:
+          CARGO_TERM_COLOR: never
+          # 与 cargo check 同款：build.rs 会校验 bundle.externalBin，
+          # KbNote 已删 sidecar，这里用局部覆盖兜住任何残留配置。
+          TAURI_CONFIG: '{"tauri":{"bundle":{"externalBin":[]}}}'
+          # 测试里的 WebView/窗口相关路径一律不触发，纯 DB 用例无需窗口系统；
+          # 兜底关掉可能尝试连接显示服务的用例。
+          RUST_BACKTRACE: 1
+        run: |
+          set +e
+          cargo test --lib > /tmp/test.log 2>&1
+          STATUS=$?
+          set -e
+
+          sed -i 's/\x1b\[[0-9;]*[a-zA-Z]//g' /tmp/test.log
+
+          echo "===== cargo test 退出码: ${STATUS} ====="
+          echo "===== test result 行 ====="
+          grep -E '^test result:' /tmp/test.log | head -20 || true
+          echo "===== 失败用例清单 ====="
+          grep -E '^test .+ \.\.\. FAILED' /tmp/test.log | head -40 || true
+          echo "===== failures: 段（每条带 15 行上下文）====="
+          grep -E -A15 '^failures:' /tmp/test.log | head -200 || true
+          echo "===== panic / assert 摘要 ====="
+          grep -E 'panicked at|assertion .* failed' /tmp/test.log | sort | uniq -c | sort -rn | head -20 || true
+
+          if [ ${STATUS} -ne 0 ]; then
+            annotate() {
+              sed -e 's/%/%25/g' | awk '{printf "%s%%0A", $0}'
+            }
+            MSG=$( {
+              echo "[cargo-test] cargo test --lib 失败，退出码 ${STATUS}（迁移链回归）"
+              echo "----- 失败用例 -----"
+              grep -E '^test .+ \.\.\. FAILED' /tmp/test.log | head -40 || true
+              echo "----- failures 详情 -----"
+              grep -E -A15 '^failures:' /tmp/test.log | head -120 || true
+              echo "----- 日志最后 40 行 -----"
+              tail -40 /tmp/test.log
+            } | annotate )
+            echo "::error::${MSG}"
+          fi
+          exit ${STATUS}
+
+      - name: Upload cargo test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cargo-test-log
+          path: /tmp/test.log
+          retention-days: 3
+          if-no-files-found: ignore

@@ -37,10 +37,10 @@ on:
         type: string
 
 jobs:
-  # ===========================================================================
-  # Job 0: 预创建 draft release + 计算构建矩阵
-  #
-  # 1) 预创建 draft release：杜绝 4 个 build job 并发 create release 时撞
+      # ===========================================================================
+      # Job 0: 预创建 draft release + 归一化 tag
+      #
+      # 1) 预创建 draft release：杜绝 4 个 build job 并发 create release 时撞
   #    GitHub API race（"Server Error" / "Error updating policy"）。让所有
   #    build job needs 它，启动时 release 已存在，tauri-action 直接复用并上传。
   #
@@ -71,7 +71,9 @@ jobs:
           if [ "$REF_NAME" != "master" ] && [ "$REF_NAME" != "main" ]; then
             TAG="$REF_NAME"
           elif [ -n "$VERSION" ]; then
-            TAG="v${VERSION}-kylin"
+            # KbNote 不再区分 -kylin 后缀：麒麟 deb（kylin-deb.yml）与
+            # Windows 安装包（本文件）同属一个版本，共用同一个 tag/release。
+            TAG="v${VERSION}"
           else
             TAG="v$(date +%Y%m%d%H%M)-manual"
           fi
@@ -90,7 +92,7 @@ jobs:
             gh release create "$TAG" \
               --repo "$REPO" \
               --draft \
-              --title "知识库 $TAG" \
+              --title "KbNote $TAG" \
               --notes "See the assets to download and install this version."
             echo "Created draft release $TAG"
           fi
@@ -99,10 +101,10 @@ jobs:
         # 矩阵为静态全量声明（见 release job 的 strategy 注释），本步骤只把
         # 实际构建范围打进日志，方便核对是否有矩阵项没跑起来。
         run: |
-          echo "本仓库为公开仓库，Actions 与 arm64 runner 均免费无限量，故采用全量矩阵。"
-          echo "将构建：windows-latest / macos-latest(aarch64, x86_64) /"
-          echo "          ubuntu-22.04(x86_64 deb+appimage) / ubuntu-24.04-arm(麒麟 aarch64 deb)"
-          echo "其中 ubuntu-24.04-arm 产出的 deb 即麒麟 / 飞腾 / 鲲鹏所需安装包。"
+          echo "KbNote 构建范围：仅 Windows（nsis 安装包）。"
+          echo "麒麟 / 飞腾 / 鲲鹏 aarch64 的 deb 不走本工作流，见 kylin-deb.yml。"
+          echo "（原因见 release job 矩阵的说明：本文件里的 aarch64 条目产出的"
+          echo "  是 glibc 2.35 / OpenSSL 3 的脱靶二进制，装到麒麟 V10 启动即崩）"
 
   # ===========================================================================
   # Job 1: 跨平台构建
@@ -141,29 +143,35 @@ jobs:
       # 或用 workflow_dispatch 的 version 输入重跑指定版本。
       matrix:
         include:
+          #
+          # =====================================================================
+          # 🔴 矩阵只保留 Windows —— 这是 KbNote 与 knowledge-base 的关键分歧
+          # =====================================================================
+          # 原 kb 是全平台矩阵（Windows / macOS×2 / ubuntu x86_64 deb /
+          # ubuntu-22.04-arm deb）。KbNote 逐条否掉，理由如下：
+          #
+          #  ✗ ubuntu-22.04-arm（deb）——**必须删**，它不是"可选优化"而是有害产物。
+          #    该条目在 jammy 宿主机上直接编，产出链接 glibc 2.35 + OpenSSL 3
+          #    （libssl.so.3）的二进制；而麒麟 V10 GFB 是 focal 底：
+          #    glibc 2.31 + OpenSSL 1.1.1。装上去**启动即崩**，且 dpkg -i 与
+          #    apt -f install 全绿——deb 的 Depends 根本不声明 OpenSSL，
+          #    所以包管理器查不出问题（knowledge-base run 9 的原样事故）。
+          #    → 麒麟 aarch64 deb 的**唯一通道**是 kylin-deb.yml：
+          #      ubuntu-22.04-arm 机器 + ubuntu:20.04 容器，ABI 同源，
+          #      且打包前有硬闸校验 DT_NEEDED / GLIBC 符号版本 / ldd not found。
+          #    留着这个条目，只会往同一个 Release 里塞一个看起来能用、
+          #    实际一启动就崩的 deb，比没有更糟。
+          #
+          #  ✗ ubuntu-22.04（x86_64 deb）：KbNote 没有 x86_64 Linux 目标机。
+          #    另注：AppImage 在未配置 TAURI_SIGNING_PRIVATE_KEY 时会因
+          #    "Unable to find a bundled project for the updater" 整步失败。
+          #
+          #  ✗ macos-latest（app + dmg）×2：无 macOS 用户，两个 job 白占约 25 分钟。
+          #
+          #  ✓ windows-latest（nsis）：用户要的 EXE 安装包，保留。
+          # =====================================================================
           - platform: windows-latest
             args: --bundles nsis
-          - platform: macos-latest
-            args: --bundles app,dmg
-            target: aarch64-apple-darwin
-          - platform: macos-latest
-            args: --bundles app,dmg
-            target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            # 只出 deb，不出 appimage。
-            # 原因：AppImage 打包在未配置 TAURI_SIGNING_PRIVATE_KEY 时会因
-            # "Unable to find a bundled project for the updater" 整步失败，
-            # 而 x86_64 的 AppImage 对麒麟目标机无用（架构不对）。
-            args: --bundles deb
-          # 麒麟 / 飞腾 / 鲲鹏 aarch64（Tauri 1.x 版本）。
-          #
-          # 🔴 必须用 ubuntu-22.04-arm，不能用 ubuntu-24.04-arm：
-          #    Tauri 1.x 依赖 libwebkit2gtk-4.0-dev，而 Ubuntu 24.04 (noble)
-          #    已**移除该开发包**（只剩运行时库 4.0-37），只有 4.1-dev 可用。
-          #    jammy (22.04) 同时提供 4.0 与 4.1 两套 dev 包，官方支持到 2027-04。
-          #    用 24.04-arm 会直接报 "Unable to locate package libwebkit2gtk-4.0-dev"。
-          - platform: ubuntu-22.04-arm
-            args: --bundles deb
 
     runs-on: ${{ matrix.platform }}
 
@@ -180,7 +188,10 @@ jobs:
         uses: pnpm/action-setup@v4
 
       - name: Install Linux system dependencies
-        # 匹配 x86_64（ubuntu-22.04）与 aarch64（ubuntu-22.04-arm）两条 Linux 矩阵。
+        # 守卫式保留：当前矩阵只剩 windows-latest，本步会被 `if` 跳过。
+        # 之所以不删——若将来加回 Linux 矩阵项，这里的包名/ABI 经验值（见下）
+        # 是踩过坑才固化下来的，删掉等于丢弃。麒麟 deb 不走这里，
+        # 它在 kylin-deb.yml 的 focal 容器里装自己的一套依赖。
         #
         # 🔴 Tauri 1.x 需要 webkit2gtk-**4.0**-dev（不是 4.1）。
         #    目标机麒麟 V10 GFB 只有 4.0 运行时库，编译侧也须对齐同一 ABI，
@@ -236,7 +247,7 @@ jobs:
           NODE_OPTIONS: '--max-old-space-size=8192'
         with:
           tagName: ${{ needs.prepare-release.outputs.tag }}
-          releaseName: '知识库 ${{ needs.prepare-release.outputs.tag }}'
+          releaseName: 'KbNote ${{ needs.prepare-release.outputs.tag }}'
           releaseBody: 'See the assets to download and install this version.'
           releaseDraft: true
           prerelease: false
