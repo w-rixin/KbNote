@@ -22,7 +22,6 @@
         "icons/icon.icns",
         "icons/icon.ico"
       ],
-      "resources": ["resources/pdfium/*", "resources/ocr/RapidOCR-json*", "resources/ocr/models/*"],
       "copyright": "Copyright (c) 2026 AgileFR",
       "category": "Productivity",
       "shortDescription": "本地笔记应用：笔记 / 每日 / 任务，数据全本地",
