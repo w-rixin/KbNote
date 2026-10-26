@@ -7,10 +7,9 @@ use crate::models::{
 use crate::services::tasks::TaskService;
 use crate::state::AppState;
 
-/// 任何会改变"提醒触发点"的写操作完成后必须调一次，让调度器重算下次唤醒时间
-fn notify_reminder(state: &State<'_, AppState>) {
-    state.reminder_notify.notify_one();
-}
+/// 待办提醒调度器已随删减移除（task_reminder service 删除）。
+/// 保留空实现，让所有写操作的调用点无需改动；将来若恢复提醒功能，在此接回调度器唤醒。
+fn notify_reminder(_state: &State<'_, AppState>) {}
 
 #[tauri::command]
 pub fn list_tasks(
