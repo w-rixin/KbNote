@@ -2,7 +2,7 @@ use std::fs::File;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
-use tokio::sync::{watch, Notify};
+use tokio::sync::Notify;
 
 use crate::database::Database;
 use crate::services::vault::VaultState;
