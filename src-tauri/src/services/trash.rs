@@ -5,7 +5,6 @@ use crate::error::AppError;
 use crate::models::{Note, PageResult, RestoreBatchResult};
 use crate::services::attachment::AttachmentService;
 use crate::services::image::ImageService;
-use crate::services::pdf::PdfService;
 
 /// 回收站服务
 pub struct TrashService;
@@ -38,11 +37,6 @@ impl TrashService {
             }
         }
 
-        // 4. 删 PDF 子目录 pdfs/<id>/（新方案 C 格式：每个笔记独占目录）
-        //    旧格式 pdfs/<id>.pdf 是单文件，这里 is_dir 检查会跳过，互不冲突
-        if let Err(e) = PdfService::delete_note_pdfs(data_dir, note_id) {
-            log::warn!("删除笔记 {} PDF 子目录失败: {}", note_id, e);
-        }
     }
     /// 软删除笔记（移入回收站）
     pub fn soft_delete(db: &Database, id: i64) -> Result<(), AppError> {

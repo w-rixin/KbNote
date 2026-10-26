@@ -16,8 +16,6 @@ use crate::models::{AttachmentInfo, TextPreviewData};
 use crate::models::{ExcelPreviewData, ExcelSheetData};
 use crate::services::asset_path;
 use crate::services::attachment::AttachmentService;
-#[cfg(desktop)]
-use crate::services::excel_parser;
 use crate::state::AppState;
 
 /// 文本预览最大字符数（前端 Modal 一次性渲染再多就卡）。30k ≈ 普通笔记 / 中等代码文件
@@ -88,37 +86,6 @@ fn resolve_attachment_path(state: &AppState, rel: &str) -> Result<std::path::Pat
         )));
     }
     Ok(abs)
-}
-
-/// 把 Excel/ODS 附件解析为前端可直接渲染的结构化数据。
-///
-/// 内部复用 `excel_parser::read_workbook`，只把 markdown 字段丢掉、保留结构。
-/// 输入是**相对 data_dir 的 POSIX 路径**（笔记 content 里 kb-asset:// 后那段）。
-///
-/// 仅桌面端：依赖 calamine（Android target 编译失败）。移动端不注册此 command。
-#[cfg(desktop)]
-#[tauri::command]
-pub fn preview_excel_attachment(
-    state: State<'_, AppState>,
-    rel: String,
-) -> Result<ExcelPreviewData, String> {
-    let abs = resolve_attachment_path(&state, &rel).map_err(|e| e.to_string())?;
-    let summary = excel_parser::read_workbook(&abs.to_string_lossy()).map_err(|e| e.to_string())?;
-    let sheets = summary
-        .sheets
-        .into_iter()
-        .map(|s| ExcelSheetData {
-            name: s.name,
-            headers: s.headers,
-            rows: s.rows,
-            total_rows: s.total_rows,
-            truncated_rows: s.truncated_rows,
-        })
-        .collect();
-    Ok(ExcelPreviewData {
-        sheets,
-        total_rows: summary.total_rows,
-    })
 }
 
 /// 读取文本文件做预览（md/txt/json/csv/代码等）。

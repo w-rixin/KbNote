@@ -258,7 +258,7 @@ fn dispatch_action(app: AppHandle, id: &str) {
     match id {
         "global.quickCapture" => action_quick_capture(app),
         "global.quickAddWindow" => {
-            if let Err(e) = crate::services::popout_window::open_quick_add(&app) {
+            if let Err(e) = crate::services::quick_window::open_quick_add(&app) {
                 log::warn!("[shortcut] 打开快速记一笔窗口失败: {}", e);
             }
         }

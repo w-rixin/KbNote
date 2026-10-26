@@ -375,26 +375,4 @@ mod cross_machine_tests {
         assert!(resolve_content_url("#anchor", &data).is_none());
     }
 
-    /// 契约测试：`asset_path` 的已知资产段必须与同步扫描器的前缀清单一一对应。
-    /// 两边漂移会导致某类资产**静默漏同步**（`attachments/` 曾因此整目录没同步）。
-    #[test]
-    fn known_segments_match_sync_scanner_prefixes() {
-        use crate::services::sync_v1::attachment_scan::KNOWN_PREFIXES;
-        for seg in KNOWN_ASSET_SEGMENTS {
-            let want = format!("{}/", seg);
-            assert!(
-                KNOWN_PREFIXES.contains(&want.as_str()),
-                "attachment_scan::KNOWN_PREFIXES 缺少 {:?} —— 该目录下的附件会漏同步",
-                want
-            );
-        }
-        for p in KNOWN_PREFIXES {
-            let seg = p.trim_end_matches('/');
-            assert!(
-                KNOWN_ASSET_SEGMENTS.contains(&seg),
-                "asset_path::KNOWN_ASSET_SEGMENTS 缺少 {:?} —— 该目录的绝对路径无法收敛成相对路径",
-                seg
-            );
-        }
-    }
 }

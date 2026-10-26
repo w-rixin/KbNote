@@ -31,8 +31,6 @@ use tauri::{
     SystemTrayMenuItem,
 };
 
-use crate::services::sync_scheduler;
-
 /// 初始化系统托盘。
 ///
 /// 用 if let Err 兜底调用（见 lib.rs）：托盘是辅助功能，失败不应让应用启动崩。
@@ -42,10 +40,6 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .add_item(CustomMenuItem::new("quick-add", "快速记一笔"))
         .add_item(CustomMenuItem::new("open-daily", "打开今日日记"))
         .add_item(CustomMenuItem::new("open-search", "搜索"))
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(CustomMenuItem::new("sync-now", "立即同步"))
-        .add_native_item(SystemTrayMenuItem::Separator)
-        .add_item(CustomMenuItem::new("check-update", "检查更新…"))
         .add_native_item(SystemTrayMenuItem::Separator)
         .add_item(CustomMenuItem::new("show", "显示窗口"))
         .add_item(CustomMenuItem::new("quit", "退出"))
@@ -65,9 +59,9 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let mut tray = SystemTray::new()
         .with_tooltip(if cfg!(debug_assertions) {
-            "知识库 [DEV]"
+            "KbNote [DEV]"
         } else {
-            "知识库"
+            "KbNote"
         })
         .with_menu(menu)
         .on_event(move |event| {
@@ -80,7 +74,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     }
                     "quick-add" => {
                         // 快速记一笔悬浮窗：不前置主窗，应用在后台也能记
-                        let _ = crate::services::popout_window::open_quick_add(&app_handle);
+                        let _ = crate::services::quick_window::open_quick_add(&app_handle);
                     }
                     "open-daily" => {
                         bring_main_to_front(&app_handle);
@@ -89,16 +83,6 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
                     "open-search" => {
                         bring_main_to_front(&app_handle);
                         let _ = app_handle.emit_all("tray:open-search", ());
-                    }
-                    "sync-now" => {
-                        let h = app_handle.clone();
-                        tauri::async_runtime::spawn(async move {
-                            sync_scheduler::push_once(&h, "tray").await;
-                        });
-                    }
-                    "check-update" => {
-                        bring_main_to_front(&app_handle);
-                        let _ = app_handle.emit_all("tray:check-update", ());
                     }
                     "show" => {
                         bring_main_to_front(&app_handle);

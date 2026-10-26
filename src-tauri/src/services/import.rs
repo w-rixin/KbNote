@@ -14,6 +14,12 @@ use crate::services::quick_capture::{
     normalize_plain_text_for_markdown, preserve_md_indent_outside_fence,
 };
 
+/// 历史日记导入（daily_import）已随删减移除：日期识别恒返回 None。
+/// 保留调用点形状，避免改动导入主流程的控制流。
+fn detect_date_noop() -> (Option<String>, bool) {
+    (None, false)
+}
+
 /// 接受导入的纯文本扩展名（小写，不含点）。
 /// .txt 与 .md 走同一通路：纯文本本身就是合法 markdown，无需独立 Service。
 const TEXT_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
@@ -117,8 +123,8 @@ impl ImportService {
 
                 // 日期识别：文件夹名优先、文件名兜底。让前端预览能显示
                 // 「其中 N 个将作为日记导入」，导入时也据此落 is_daily。
-                let (detected_date, date_conflict) =
-                    crate::services::daily_import::detect_date(&relative_dir, &name);
+                // 历史日记导入已随 daily_import 模块移除：不再自动识别日期
+                let (detected_date, date_conflict): (Option<String>, bool) = (None, false);
 
                 Some(ScannedFile {
                     path: path.to_string_lossy().to_string(),
@@ -362,7 +368,7 @@ impl ImportService {
                             .map(|rc| compute_relative_dir(file_path, rc))
                             .unwrap_or_default();
                         if let (Some(date), _) =
-                            crate::services::daily_import::detect_date(&rel_dir, &final_title)
+                            detect_date_noop()
                         {
                             // 一天一篇：本批已认领过该日期，或库里已有该天的日记，都不再认领
                             let already = claimed_dates.contains(&date)
@@ -483,50 +489,6 @@ impl ImportService {
                         }
                         Err(e) => {
                             log::warn!("[import] 笔记 {} 外链图片下载失败: {}", note.id, e);
-                        }
-                    }
-
-                    // 视频本地引用（与图片同步骤：先本地路径，再外链下载）
-                    match crate::services::import_video_attachments::rewrite_video_paths(
-                        &current_body,
-                        note.id,
-                        &note_dir_for_local,
-                        local_root,
-                        app_data_dir,
-                    ) {
-                        Ok(rewrite) => {
-                            if rewrite.copied > 0 {
-                                attachments_copied += rewrite.copied;
-                            }
-                            for m in rewrite.missing {
-                                attachments_missing.push(format!("{}: {}", final_title, m));
-                            }
-                            current_body = rewrite.new_body;
-                        }
-                        Err(e) => {
-                            log::warn!("[import] 笔记 {} 本地视频重写失败: {}", note.id, e);
-                        }
-                    }
-
-                    // 视频外链下载
-                    match crate::services::import_video_attachments::rewrite_external_videos(
-                        &current_body,
-                        note.id,
-                        app_data_dir,
-                    )
-                    .await
-                    {
-                        Ok(rewrite) => {
-                            if rewrite.copied > 0 {
-                                attachments_copied += rewrite.copied;
-                            }
-                            for m in rewrite.missing {
-                                attachments_missing.push(format!("{}: {}", final_title, m));
-                            }
-                            current_body = rewrite.new_body;
-                        }
-                        Err(e) => {
-                            log::warn!("[import] 笔记 {} 外链视频下载失败: {}", note.id, e);
                         }
                     }
 
@@ -775,27 +737,6 @@ async fn process_single_md_images(
         all_mappings.extend(rewrite.mappings);
     }
     if let Ok(rewrite) = crate::services::import_attachments::rewrite_external_images(
-        &current,
-        note_id,
-        app_data_dir,
-    )
-    .await
-    {
-        current = rewrite.new_body;
-        all_mappings.extend(rewrite.mappings);
-    }
-    // 视频本地引用 + 外链下载（与图片同序：先本地，再外链）
-    if let Ok(rewrite) = crate::services::import_video_attachments::rewrite_video_paths(
-        &current,
-        note_id,
-        &note_dir,
-        &note_dir,
-        app_data_dir,
-    ) {
-        current = rewrite.new_body;
-        all_mappings.extend(rewrite.mappings);
-    }
-    if let Ok(rewrite) = crate::services::import_video_attachments::rewrite_external_videos(
         &current,
         note_id,
         app_data_dir,

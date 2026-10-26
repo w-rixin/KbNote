@@ -443,26 +443,6 @@ mod tests {
     }
 
     /// 白板的 content 是 Excalidraw JSON，回写还要重建 search_text 与画布双链，
-    /// 必须走 services::whiteboard 那条路，这里要挡住。
-    #[test]
-    fn restore_rejects_whiteboard() {
-        let db = mem_db();
-        let wb = db
-            .create_whiteboard(
-                &NoteInput {
-                    title: "画布".into(),
-                    content: r#"{"type":"excalidraw","elements":[]}"#.into(),
-                    folder_id: None,
-                },
-                "",
-            )
-            .unwrap();
-        assert!(capture_manual(&db, wb.id).unwrap());
-        let snap_id = db.list_note_snapshots(wb.id, None).unwrap()[0].id;
-
-        assert!(restore(&db, wb.id, snap_id).is_err());
-    }
-
     /// 防前端把 id 传串，拿 A 的历史盖到 B 上。
     #[test]
     fn restore_rejects_foreign_snapshot() {

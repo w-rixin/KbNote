@@ -1,12 +1,33 @@
 use crate::database::Database;
 use crate::error::AppError;
 use crate::models::{Note, NoteImageRef, NoteInput, NoteQuery, PageResult};
-use crate::services::sync_v1::attachment_scan::extract_local_refs;
 
 /// 单篇笔记最多回传的图片数，防一篇图墙笔记撑爆 IPC 载荷 / 刷屏 AI 回答下方。
 const MAX_IMAGES_PER_NOTE: usize = 12;
 
 /// 笔记服务
+/// 从笔记内容中抽出 `kb-asset://` 本地资产相对路径（去重、保序）。
+///
+/// 原实现来自 `sync_v1::attachment_scan`（随同步模块删除），逻辑等价：
+/// 扫到 `kb-asset://` 前缀后，取到空白 / 引号 / 右括号 / `>` / `?` 为止。
+fn extract_local_refs(content: &str) -> Vec<String> {
+    const PREFIX: &str = "kb-asset://";
+    let mut out: Vec<String> = Vec::new();
+    let mut rest = content;
+    while let Some(i) = rest.find(PREFIX) {
+        let tail = &rest[i + PREFIX.len()..];
+        let end = tail
+            .find(|c: char| c.is_whitespace() || matches!(c, '"' | '\'' | ')' | '>' | '?'))
+            .unwrap_or(tail.len());
+        let rel = &tail[..end];
+        if !rel.is_empty() && !out.iter().any(|x| x == rel) {
+            out.push(rel.to_string());
+        }
+        rest = &tail[end..];
+    }
+    out
+}
+
 pub struct NoteService;
 
 impl NoteService {
@@ -232,211 +253,4 @@ impl NoteService {
         db.set_note_scratch(id, scratch)
     }
 
-    // ─── T-007 笔记加密 ────────────────────────────
-
-    /// 加密这篇笔记：读 content → vault 加密 → 写入 blob + 占位 content；
-    /// 同时立即把 `images/{id}/` 下所有明文图片迁移成 `.enc`。
-    ///
-    /// 要求 vault 已解锁。调用前自行检查 `VaultService::status`。
-    /// 图片迁移是 best-effort：迁移失败会回滚 DB（取消加密），保证 DB 与磁盘一致。
-    pub fn encrypt_note(
-        db: &Database,
-        vault: &std::sync::RwLock<crate::services::vault::VaultState>,
-        app_data_dir: &std::path::Path,
-        id: i64,
-    ) -> Result<(), AppError> {
-        // 读现有明文 content
-        let note = db
-            .get_note(id)?
-            .ok_or_else(|| AppError::NotFound(format!("笔记 {} 不存在", id)))?;
-        if note.is_encrypted {
-            return Err(AppError::Custom("笔记已经处于加密态".to_string()));
-        }
-        let blob = crate::services::vault::VaultService::encrypt_plaintext(
-            vault,
-            note.content.as_bytes(),
-        )?;
-        // 占位符不会参与 FTS5 匹配（跟标题分隔开）；前端也用它做"已加密"提示
-        const PLACEHOLDER: &str = "🔒 已加密内容——请解锁后查看";
-        db.enable_note_encryption(id, PLACEHOLDER, &blob)?;
-
-        // 立即迁移图片到 .enc。失败则回滚 DB，避免出现"DB 已加密但图片仍是明文"的不一致状态
-        if let Err(e) = crate::services::image::ImageService::migrate_note_images(
-            vault,
-            app_data_dir,
-            id,
-            crate::services::image::ImageMigration::Encrypt,
-        ) {
-            log::error!("笔记 {} 图片加密迁移失败，回滚 DB 加密：{}", id, e);
-            db.disable_note_encryption(id, &note.content)?;
-            return Err(AppError::Custom(format!("图片加密迁移失败：{}", e)));
-        }
-        Ok(())
-    }
-
-    /// 解密并返回明文（不改库状态）。vault 必须已解锁
-    pub fn decrypt_note(
-        db: &Database,
-        vault: &std::sync::RwLock<crate::services::vault::VaultState>,
-        id: i64,
-    ) -> Result<String, AppError> {
-        let blob = db
-            .get_encrypted_blob(id)?
-            .ok_or_else(|| AppError::NotFound(format!("笔记 {} 未加密或不存在", id)))?;
-        let plaintext_bytes = crate::services::vault::VaultService::decrypt_blob(vault, &blob)?;
-        String::from_utf8(plaintext_bytes)
-            .map_err(|e| AppError::Custom(format!("密文解码为 UTF-8 失败: {}", e)))
-    }
-
-    /// 取消加密：解密后把明文写回 content + 清 blob；
-    /// 同时立即把 `images/{id}/` 下所有 `.enc` 图片解密回原后缀。
-    ///
-    /// 图片迁移失败回滚 DB（重新加密 placeholder + blob），保证一致性。
-    pub fn disable_encrypt(
-        db: &Database,
-        vault: &std::sync::RwLock<crate::services::vault::VaultState>,
-        app_data_dir: &std::path::Path,
-        id: i64,
-    ) -> Result<(), AppError> {
-        let plaintext = Self::decrypt_note(db, vault, id)?;
-        // 先存一份加密 blob 用于回滚
-        let blob = db
-            .get_encrypted_blob(id)?
-            .ok_or_else(|| AppError::NotFound(format!("笔记 {} 未加密", id)))?;
-        db.disable_note_encryption(id, &plaintext)?;
-
-        if let Err(e) = crate::services::image::ImageService::migrate_note_images(
-            vault,
-            app_data_dir,
-            id,
-            crate::services::image::ImageMigration::Decrypt,
-        ) {
-            log::error!("笔记 {} 图片解密迁移失败，回滚 DB 解密：{}", id, e);
-            const PLACEHOLDER: &str = "🔒 已加密内容——请解锁后查看";
-            db.enable_note_encryption(id, PLACEHOLDER, &blob)?;
-            return Err(AppError::Custom(format!("图片解密迁移失败：{}", e)));
-        }
-        Ok(())
-    }
-
-    /// T-014 网页剪藏：抓 URL → markdown → 创建笔记 → 正文图片落本地
-    ///
-    /// `folder_id` 优先级：用户传入 > None（根目录）。
-    ///
-    /// `app_data_dir` 必须是 `AppState.data_dir`（DataDirResolver 解析过的实际数据目录），
-    /// 不能用 framework 默认的 `app_data_dir()`——否则图片会落到用户没在用的目录里。
-    ///
-    /// 图片处理放在建笔记**之后**：`rewrite_external_images` 按 note_id 分目录落盘，
-    /// 必须先有 id。下载失败不影响剪藏本身（正文保留原始外链，仅记 warn）。
-    pub async fn clip_url(
-        db: &Database,
-        url: &str,
-        folder_id: Option<i64>,
-        app_data_dir: &std::path::Path,
-    ) -> Result<Note, AppError> {
-        // 用户在设置里配的 Jina API Key（可空）——仅作直连失败时的兜底，读不到就当没配
-        let jina_key = db
-            .get_config(crate::services::web_clip::JINA_KEY_CONFIG)
-            .unwrap_or(None);
-
-        let clipped = crate::services::web_clip::fetch_page(url, jina_key.as_deref()).await?;
-
-        // 笔记正文头部加一行 source 元信息，方便用户回溯原文
-        let body = format!(
-            "> 🌐 来源：[{src}]({src})\n\n{content}",
-            src = clipped.source_url,
-            content = clipped.markdown,
-        );
-
-        let mut input = NoteInput {
-            title: clipped.title,
-            content: body,
-            folder_id,
-        };
-        let note = Self::create(db, &input)?;
-
-        // 正文里的 https:// 图片下载到本地（微信等站点的防盗链绕过已在该函数内处理），
-        // 否则笔记里的图迟早因 CDN 过期 / Referer 校验而裂掉。
-        match crate::services::import_attachments::rewrite_external_images(
-            &input.content,
-            note.id,
-            app_data_dir,
-        )
-        .await
-        {
-            Ok(rewrite) => {
-                if !rewrite.missing.is_empty() {
-                    log::warn!(
-                        "[web-clip] 笔记 {} 有 {} 张图片下载失败，保留原始外链",
-                        note.id,
-                        rewrite.missing.len()
-                    );
-                }
-                if rewrite.copied > 0 {
-                    input.content = rewrite.new_body;
-                    return Self::update(db, note.id, &input);
-                }
-            }
-            Err(e) => {
-                log::warn!("[web-clip] 笔记 {} 图片本地化失败：{}", note.id, e);
-            }
-        }
-
-        Ok(note)
-    }
-
-    /// 剪藏网页并返回**可直接插入编辑器的 HTML**，不新建笔记——供编辑器工具栏用。
-    ///
-    /// 与 [`Self::clip_url`] 的区别只在落点：那个建新笔记，这个把正文插进已有笔记。
-    /// 因此图片本地化要传**当前笔记的 id**（`rewrite_external_images` 按 note_id 分目录），
-    /// 图片才会跟着宿主笔记走、随其一起被同步和清理。
-    ///
-    /// 返回 HTML 而非 markdown：Tiptap 的 `insertContent` 吃 HTML，
-    /// 在这里用现成的 `markdown_to_html` 转好，前端就不必再引一个 markdown 解析器。
-    /// 内容带 `> 🌐 来源：...` 头，与新建笔记的正文格式保持一致。
-    pub async fn clip_url_to_html(
-        db: &Database,
-        url: &str,
-        note_id: i64,
-        app_data_dir: &std::path::Path,
-    ) -> Result<String, AppError> {
-        let jina_key = db
-            .get_config(crate::services::web_clip::JINA_KEY_CONFIG)
-            .unwrap_or(None);
-
-        let clipped = crate::services::web_clip::fetch_page(url, jina_key.as_deref()).await?;
-
-        let body = format!(
-            "> 🌐 来源：[{src}]({src})\n\n{content}",
-            src = clipped.source_url,
-            content = clipped.markdown,
-        );
-
-        // 图片本地化失败不阻断插入：正文保留原始外链，用户仍拿得到内容（与 clip_url 同策略）
-        match crate::services::import_attachments::rewrite_external_images(
-            &body,
-            note_id,
-            app_data_dir,
-        )
-        .await
-        {
-            Ok(rewrite) => {
-                if !rewrite.missing.is_empty() {
-                    log::warn!(
-                        "[web-clip] 插入笔记 {} 时有 {} 张图片下载失败，保留原始外链",
-                        note_id,
-                        rewrite.missing.len()
-                    );
-                }
-                if rewrite.copied > 0 {
-                    return Ok(crate::services::markdown::markdown_to_html(&rewrite.new_body));
-                }
-            }
-            Err(e) => {
-                log::warn!("[web-clip] 插入笔记 {} 时图片本地化失败：{}", note_id, e);
-            }
-        }
-
-        Ok(crate::services::markdown::markdown_to_html(&body))
-    }
 }

@@ -30,7 +30,6 @@ pub fn save_note_image(
 ) -> Result<String, String> {
     let abs = ImageService::save_from_base64(
         &state.db,
-        &state.vault,
         &state.data_dir,
         note_id,
         &file_name,
@@ -49,7 +48,6 @@ pub fn save_note_image_from_path(
 ) -> Result<String, String> {
     let abs = ImageService::save_from_path(
         &state.db,
-        &state.vault,
         &state.data_dir,
         note_id,
         &source_path,
@@ -83,7 +81,6 @@ pub async fn download_image_to_assets(
 
     let abs = ImageService::save_bytes_routed(
         &state.db,
-        &state.vault,
         &state.data_dir,
         note_id,
         &file_name,
@@ -148,7 +145,7 @@ pub async fn get_image_blob(
         use tauri::Manager;
         let state = app.state::<AppState>();
         let abs = resolve_image_path(&state, &path)?;
-        ImageService::read_for_render(&state.vault, &abs.to_string_lossy())
+        ImageService::read_for_render(&abs.to_string_lossy())
             .map_err(|e| e.to_string())
     })
     .await

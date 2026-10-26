@@ -1,7 +1,5 @@
 use crate::models::{Note, NoteImageRef, NoteInput, NoteQuery, PageResult};
 use crate::services::note::NoteService;
-#[cfg(desktop)]
-use crate::services::popout_window;
 use crate::services::trash::TrashService;
 use crate::state::AppState;
 use tauri::{Manager};
@@ -198,59 +196,3 @@ pub fn set_note_scratch(
     NoteService::set_scratch(&state.db, id, scratch).map_err(|e| e.to_string())
 }
 
-// ─── T-014 网页剪藏 ────────────────────────────
-
-/// 把网页 URL 剪藏成笔记（直连原页 → readability 提正文 → markdown）
-///
-/// `folder_id` 由前端透传：右键菜单触发时是该文件夹 id；全局入口可传当前选中文件夹
-/// 或 null（落根目录）。返回新建笔记，前端可立即跳转到编辑器。
-#[tauri::command]
-pub async fn clip_url_to_note(
-    state: tauri::State<'_, AppState>,
-    url: String,
-    folder_id: Option<i64>,
-) -> Result<Note, String> {
-    // ⚠️ 用 state.data_dir（DataDirResolver 解析过的实际数据目录），
-    // 不能用 app.path_resolver().app_data_dir()——那是 OS 默认目录，不跟随用户改的数据目录
-    let app_data_dir = state.data_dir.clone();
-    NoteService::clip_url(&state.db, &url, folder_id, &app_data_dir)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// 剪藏网页并返回可插入编辑器的 HTML（不建笔记）——编辑器工具栏「插入到当前笔记」用
-///
-/// `note_id` 是插入目标笔记，用于把正文图片落到该笔记的附件目录下。
-#[tauri::command]
-pub async fn clip_url_to_html(
-    state: tauri::State<'_, AppState>,
-    url: String,
-    note_id: i64,
-) -> Result<String, String> {
-    let app_data_dir = state.data_dir.clone();
-    NoteService::clip_url_to_html(&state.db, &url, note_id, &app_data_dir)
-        .await
-        .map_err(|e| e.to_string())
-}
-
-/// 把指定笔记弹到独立 OS 窗口（双显示器对照 / 主副屏分屏用）
-///
-/// 同 note_id 已存在 pop-out 窗口则直接前置，避免重复弹。
-/// 仅桌面端：移动端无多窗口模型，不暴露此 command（lib.rs generate_handler 也已 cfg gate）
-#[cfg(desktop)]
-#[tauri::command]
-pub async fn open_note_in_new_window(app: tauri::AppHandle, note_id: i64) -> Result<(), String> {
-    popout_window::open_note(&app, note_id).map_err(|e| e.to_string())
-}
-
-/// 把指定笔记的思维导图弹到独立 OS 窗口（纯导图视图，不带编辑器）
-///
-/// 同 note_id 已存在 popout-mindmap 窗口则直接前置。仅桌面端。
-#[cfg(desktop)]
-#[tauri::command]
-pub async fn open_mindmap_in_new_window(
-    app: tauri::AppHandle,
-    note_id: i64,
-) -> Result<(), String> {
-    popout_window::open_mindmap(&app, note_id).map_err(|e| e.to_string())
-}

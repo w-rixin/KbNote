@@ -887,67 +887,6 @@ pub fn run() {
                 Ok(p) => log::info!("附件存储目录: {}", p.display()),
                 Err(e) => log::error!("附件目录创建失败（附件功能降级，不影响启动）: {}", e),
             }
-            match services::pdf::PdfService::ensure_dir(&data_dir_root) {
-                Ok(p) => log::info!("PDF 存储目录: {}", p.display()),
-                Err(e) => log::error!("PDF 目录创建失败（PDF 功能降级，不影响启动）: {}", e),
-            }
-
-            // 绑定 PDFium 动态库（资源目录与实例无关）。各平台用各自的动态库格式：
-            //   Windows: pdfium.dll  / macOS: libpdfium.dylib  / Linux: libpdfium.so
-            // 如果 resources/pdfium/ 下缺对应平台的库文件，仅 log warn —— pdf-extract
-            // 主路径仍可工作，只是失去 PDFium fallback 这条防扫描件兜底。
-            // 仅桌面端：移动端 NDK 加载动态库受沙盒限制，不引入 PDFium
-            #[cfg(desktop)]
-            {
-                #[cfg(target_os = "windows")]
-                const PDFIUM_LIB: &str = "resources/pdfium/pdfium.dll";
-                #[cfg(target_os = "macos")]
-                const PDFIUM_LIB: &str = "resources/pdfium/libpdfium.dylib";
-                #[cfg(target_os = "linux")]
-                const PDFIUM_LIB: &str = "resources/pdfium/libpdfium.so";
-
-                // 🔴 v1 的 PathResolver::resolve_resource 返回 Option<PathBuf>（v2 返回 Result）
-                match app
-                    .path_resolver()
-                    .resolve_resource(PDFIUM_LIB)
-                {
-                    Some(lib_path) => match services::pdf::init_pdfium(&lib_path) {
-                        Ok(()) => log::info!("PDFium 绑定成功: {}", lib_path.display()),
-                        Err(e) => log::warn!(
-                            "PDFium 绑定失败（fallback 不可用，仅 pdf-extract 路径可用）: {}",
-                            e
-                        ),
-                    },
-                    None => log::warn!("PDFium 资源路径解析失败: 未找到 {}", PDFIUM_LIB),
-                }
-
-                // #9 本地 OCR 引擎路径解析（RapidOCR-json sidecar，桌面端，跨平台）。
-                // RapidOCR-json 三平台协议一致，仅二进制文件名不同：Windows 带 .exe，mac/Linux 无扩展名。
-                // 各平台只需把对应二进制放进 resources/ocr/ 即可（当前仓库仅含 Windows exe，
-                // mac/Linux 二进制见 resources/ocr/README.md）。解析不到 / 文件缺失 → OCR 优雅禁用。
-                #[cfg(target_os = "windows")]
-                const OCR_ENGINE: &str = "resources/ocr/RapidOCR-json.exe";
-                #[cfg(not(target_os = "windows"))]
-                const OCR_ENGINE: &str = "resources/ocr/RapidOCR-json";
-                // v1 的 resolve_resource 已返回 Option，无需再 .ok()
-                let ocr_exe = app
-                    .path_resolver()
-                    .resolve_resource(OCR_ENGINE)
-                    .filter(|p| p.exists());
-                match &ocr_exe {
-                    Some(p) => log::info!("[ocr] 本地 OCR 引擎就绪: {}", p.display()),
-                    None => log::info!(
-                        "[ocr] 本地 OCR 引擎未随包分发（当前平台无 RapidOCR-json 二进制，OCR 功能不可用）"
-                    ),
-                }
-                services::ocr::set_engine_path(ocr_exe);
-            }
-
-            match services::source_file::SourceFileService::ensure_dir(&data_dir_root) {
-                Ok(p) => log::info!("源文件存储目录: {}", p.display()),
-                Err(e) => log::error!("源文件目录创建失败（源文件写回降级，不影响启动）: {}", e),
-            }
-
             // 把当前数据目录加进 asset protocol scope（递归）。
             // 静态 tauri.conf.json 里的 `$APPDATA/**` 只覆盖 OS 默认 app_data_dir，
             // 用户改自定义数据目录 / KB_DATA_DIR 后 kb_assets/pdfs/sources
@@ -989,19 +928,12 @@ pub fn run() {
 
             app.manage(state);
 
-            // 启动期清理 .sync-tmp-* 孤儿（上次崩溃 / kill 可能残留 VACUUM 副本 / push-zip / pull-zip）
-            // 顶层扫，严格前缀匹配，不递归子目录 → 不会误删任何业务资产
-            let cleaned = services::sync::SyncService::cleanup_orphan_temp_files(&data_dir_root);
-            if cleaned > 0 {
-                log::info!("[startup] 清理 {} 个同步临时孤儿文件", cleaned);
-            }
-
             // 窗口标题：dev build 追加 [DEV]，prod 保留 conf.json 默认标题
             // 仅桌面端：移动端无窗口标题概念（标题栏由系统/状态栏管理）
             #[cfg(desktop)]
             if cfg!(debug_assertions) {
                 if let Some(window) = app.get_window("main") {
-                    let _ = window.set_title("知识库 [DEV]");
+                    let _ = window.set_title("KbNote [DEV]");
                 }
             }
 
@@ -1054,40 +986,6 @@ pub fn run() {
                 }
             }
 
-            // 自动同步调度器
-            // 仅桌面端：移动端按 T-M014/T-M026 走"手动同步 + 一键同步按钮"，后台常驻定时
-            // 任务在移动端受系统限制（需 WorkManager 另做），故调度器暂桌面专属。
-            // 注：S3 backend 本身已跨平台（rusty-s3，见 backend_s3.rs），此处 gate 与 S3 无关。
-            #[cfg(desktop)]
-            {
-                let app_handle_sched = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    services::sync_scheduler::run_scheduler(app_handle_sched).await;
-                });
-                // V1 多端同步调度器：每分钟扫到期 backend 跑双向（pull → push）
-                let app_handle_v1 = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    services::sync_v1_scheduler::run_v1_scheduler(app_handle_v1).await;
-                });
-            }
-
-            // 待办定时提醒
-            let app_handle_reminder = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                services::task_reminder::run_reminder_loop(app_handle_reminder).await;
-            });
-
-            // 文件夹自动导入：盯住用户指定目录，新落地的 .md 自动进库
-            // （浏览器剪藏插件把网页存成 Markdown 后不用再手动导入）。
-            // 默认关闭，循环里读 app_config 判断，没开启就空转。
-            #[cfg(desktop)]
-            {
-                let app_handle_watch = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    services::folder_watch::run_folder_watch_loop(app_handle_watch).await;
-                });
-            }
-
             // 外部写入侦测：外部 agent（kb-mcp 独立进程）/ in-memory MCP 写笔记后，
             // 轮询 PRAGMA data_version 感知变化并 emit("db:external-changed")，前端据此刷新列表。
             start_db_change_watcher(app.handle().clone());
@@ -1126,9 +1024,6 @@ pub fn run() {
             // #9 本地 OCR（RapidOCR sidecar）
             // ⚠️ generate_handler! 宏不解析 #[cfg] 属性（v1 会报 expected identifier），
             //    且这两个函数本身没有平台 gate（内部按 cfg 分支降级），故直接列出。
-            commands::ocr::ocr_available,
-            commands::ocr::ocr_image,
-            commands::ocr::ocr_pdf,
             // 外部 MCP server 子进程仅桌面端
             // MCP HTTP 服务（桌面端专属：移动端不开监听端口）
             // 系统模块
@@ -1147,17 +1042,12 @@ pub fn run() {
             commands::system::export_diagnostics,
             commands::system::check_db_text_health,
             // 系统字体枚举（设置页自选字体，仅桌面端）
-            commands::font::list_system_fonts,
             // 配置模块
             commands::config::get_all_config,
             commands::config::get_config,
             commands::config::set_config,
             commands::config::delete_config,
             // 待办提醒自定义提示音（音频文件导入 / 列举 / 解析 / 删除）
-            commands::reminder_sound::import_reminder_sound,
-            commands::reminder_sound::list_reminder_sounds,
-            commands::reminder_sound::resolve_reminder_sound,
-            commands::reminder_sound::delete_reminder_sound,
             // 笔记模块
             commands::notes::create_note,
             commands::notes::update_note,
@@ -1182,52 +1072,15 @@ pub fn run() {
             commands::notes::add_tags_to_notes_batch,
             commands::notes::set_note_hidden,
             // 白板模块（白板 = note_type='whiteboard' 的笔记，其余操作复用笔记命令）
-            commands::whiteboard::create_whiteboard,
-            commands::whiteboard::get_whiteboard_scene,
-            commands::whiteboard::save_whiteboard_scene,
-            commands::whiteboard::save_embedded_whiteboard,
-            commands::whiteboard::load_embedded_whiteboard,
-            commands::whiteboard::list_whiteboard_snapshots,
-            commands::whiteboard::get_whiteboard_snapshot_scene,
-            commands::whiteboard::create_whiteboard_snapshot,
-            commands::whiteboard::restore_whiteboard_snapshot,
-            commands::whiteboard::get_whiteboard_library,
-            commands::whiteboard::save_whiteboard_library,
-            commands::whiteboard::get_note_excerpts,
-            commands::whiteboard::list_embedded_whiteboard_snapshots,
-            commands::whiteboard::get_embedded_whiteboard_snapshot_scene,
-            commands::whiteboard::restore_embedded_whiteboard_snapshot,
             commands::notes::list_hidden_notes,
             commands::notes::list_hidden_folder_ids,
             commands::notes::list_scratch_notes,
             commands::notes::set_note_scratch,
             // 隐藏笔记 PIN（UX 门禁，非真加密）
-            commands::hidden_pin::is_hidden_pin_set,
-            commands::hidden_pin::set_hidden_pin,
-            commands::hidden_pin::verify_hidden_pin,
-            commands::hidden_pin::clear_hidden_pin,
-            commands::hidden_pin::get_hidden_pin_hint,
             // 应用启动锁（软锁 / 全局进入密码，非真加密）
-            commands::app_lock::app_lock_status,
-            commands::app_lock::app_lock_set_password,
-            commands::app_lock::app_lock_verify,
-            commands::app_lock::app_lock_disable,
-            commands::app_lock::app_lock_get_hint,
-            commands::app_lock::app_lock_set_auto_minutes,
             // T-014 网页剪藏
-            commands::notes::clip_url_to_note,
-            commands::notes::clip_url_to_html,
             // 多窗口 pop-out（笔记对照 / 双显示器分屏）
-            commands::notes::open_note_in_new_window,
-            commands::notes::open_mindmap_in_new_window,
             // T-007 笔记加密 / Vault
-            commands::vault::vault_status,
-            commands::vault::vault_setup,
-            commands::vault::vault_unlock,
-            commands::vault::vault_lock,
-            commands::vault::encrypt_note,
-            commands::vault::decrypt_note,
-            commands::vault::disable_note_encrypt,
             // T-013 自定义数据目录
             commands::data_dir::get_data_dir_info,
             commands::data_dir::set_pending_data_dir,
@@ -1237,21 +1090,6 @@ pub fn run() {
             commands::data_dir::retry_pending_migration,
             commands::data_dir::get_migration_marker,
             // T-024 同步 V1（多端真同步 + 多 backend）
-            commands::sync_v1::sync_v1_list_backends,
-            commands::sync_v1::sync_v1_get_backend,
-            commands::sync_v1::sync_v1_create_backend,
-            commands::sync_v1::sync_v1_update_backend,
-            commands::sync_v1::sync_v1_delete_backend,
-            commands::sync_v1::sync_v1_test_connection,
-            commands::sync_v1::sync_v1_read_remote_manifest,
-            commands::sync_v1::sync_v1_push,
-            commands::sync_v1::sync_v1_pull,
-            commands::sync_v1::sync_v1_trigger_background_sync,
-            commands::sync_v1::sync_v1_get_local_manifest,
-            commands::sync_v1::sync_v1_rebuild_attachment_index,
-            commands::sync_v1::sync_v1_gc_attachments,
-            commands::sync_v1::sync_v1_list_conflicts,
-            commands::sync_v1::sync_v1_resolve_conflict,
             // 文件夹模块
             commands::folders::create_folder,
             commands::folders::rename_folder,
@@ -1282,8 +1120,6 @@ pub fn run() {
             commands::daily::get_daily_neighbors,
             commands::daily::list_all_dailies,
             commands::daily::append_quick_capture,
-            commands::daily::scan_daily_convert,
-            commands::daily::apply_daily_convert,
             // 标签模块
             commands::tags::create_tag,
             commands::tags::list_tags,
@@ -1298,13 +1134,6 @@ pub fn run() {
             commands::tags::get_tags_for_notes,
             commands::tags::list_notes_by_tag,
             // 链接模块
-            commands::links::sync_note_links,
-            commands::links::get_backlinks,
-            commands::links::get_note_link_summary,
-            commands::links::rebuild_note_links,
-            commands::links::search_link_targets,
-            commands::links::find_note_id_by_title_loose,
-            commands::links::get_graph_data,
             // AI 模块
             // P0-1b：Key 不回显后，已保存模型的测试与分享各自走显式入口
             // Excel 解析仅桌面端（calamine 移动端编译失败，T-M013 后再决策）
@@ -1341,77 +1170,22 @@ pub fn run() {
             commands::image::get_image_blob,
             commands::image::copy_image_to_clipboard,
             // 孤儿素材统一清理（替代旧的 scan_orphan_images / clean_orphan_images）
-            commands::orphan::scan_orphan_assets,
-            commands::orphan::clean_orphan_assets,
             // 视频模块
-            commands::videos::save_video,
-            commands::videos::save_video_from_path,
-            commands::videos::delete_note_videos,
-            commands::videos::get_videos_dir,
             // 附件模块（PDF/Office/ZIP/音视频等通用文件）
             commands::attachment::save_note_attachment,
             commands::attachment::save_note_attachment_from_path,
             commands::attachment::delete_note_attachments,
             commands::attachment::get_attachments_dir,
-            commands::attachment::preview_excel_attachment,
             commands::attachment::preview_text_attachment,
             // Excel 二维数据集（P1-3b）：解析入库 + 结构/行查询。
             // 仅桌面端 —— 依赖 calamine，Android target 编译失败
-            commands::dataset::import_attachment_datasets,
-            commands::dataset::list_attachment_datasets,
-            commands::dataset::get_dataset_schema,
-            commands::dataset::preview_dataset_rows,
             // 模板模块
-            commands::template::list_templates,
-            commands::template::get_template,
-            commands::template::create_template,
-            commands::template::update_template,
-            commands::template::delete_template,
-            commands::template::create_note_from_template,
-            commands::template::render_template_content,
             // Excel / ODS / CSV 导入为笔记（仅桌面端，依赖 calamine）
-            commands::excel_import::import_excel_files,
             // PDF 模块
-            commands::pdf::import_pdfs,
-            commands::pdf::get_pdf_absolute_path,
             // 通用源文件 / Word 模块
-            commands::source_file::get_converter_status,
-            commands::source_file::diagnose_doc_converter,
-            commands::source_file::convert_doc_to_docx_base64,
-            commands::source_file::attach_source_file,
-            commands::source_file::get_source_file_absolute_path,
-            commands::source_file::read_file_as_base64,
             // 外部 .md 写回（保存即同步原文件）
-            commands::source_writeback::write_back_source_md,
-            commands::source_writeback::clear_source_md_link,
             // 同步模块（V1/V2：本地 ZIP + WebDAV 全量快照）
-            commands::sync::sync_export_to_file,
-            commands::sync::sync_import_from_file,
-            commands::sync::sync_webdav_test,
-            commands::sync::sync_webdav_push,
-            commands::sync::sync_webdav_pull,
-            commands::sync::sync_webdav_preview,
-            commands::sync::sync_webdav_list_snapshots,
-            commands::sync::sync_save_webdav_password,
-            commands::sync::sync_has_webdav_password,
-            commands::sync::sync_get_webdav_password,
-            commands::sync::sync_delete_webdav_password,
-            commands::sync::sync_save_backup_password,
-            commands::sync::sync_has_backup_password,
-            commands::sync::sync_get_backup_password,
-            commands::sync::sync_delete_backup_password,
-            commands::sync::sync_list_history,
-            commands::sync::sync_scheduler_reload,
             // 闪卡 + FSRS 复习
-            commands::cards::create_card,
-            commands::cards::list_cards,
-            commands::cards::get_card,
-            commands::cards::list_due_cards,
-            commands::cards::update_card_content,
-            commands::cards::delete_card,
-            commands::cards::review_card,
-            commands::cards::get_card_stats,
-            commands::cards::list_card_review_logs,
             // 待办模块
             commands::tasks::list_tasks,
             commands::tasks::get_task,
@@ -1444,22 +1218,8 @@ pub fn run() {
             commands::tasks::update_task_category,
             commands::tasks::delete_task_category,
             // 项目（v41，配合甘特图）
-            commands::projects::list_projects,
-            commands::projects::get_project,
-            commands::projects::create_project,
-            commands::projects::update_project,
-            commands::projects::delete_project,
             // Dataview 块（v1.12 最简，5 个固定模板查询）
-            commands::dataview::dataview_recent_notes,
-            commands::dataview::dataview_notes_by_tag,
-            commands::dataview::dataview_notes_by_folder,
-            commands::dataview::dataview_pending_tasks,
-            commands::dataview::dataview_tasks_by_project,
             // 语音识别（ASR）
-            commands::asr::asr_get_config,
-            commands::asr::asr_save_config,
-            commands::asr::asr_test_connection,
-            commands::asr::asr_transcribe_audio,
             // 移动端"检查更新"（桌面端走 tauri-plugin-updater，无此命令）
         ])
         // ─── 窗口事件处理 ─────────────────────────
