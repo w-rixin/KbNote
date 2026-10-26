@@ -120,58 +120,6 @@ fn extract_md_paths_from_args<I: IntoIterator<Item = String>>(args: I) -> Vec<St
         .collect()
 }
 
-/// 在 Tauri 主进程内启动一份 in-memory MCP server (kb-core)，返回 client 端。
-///
-/// 架构：
-/// ```text
-///   主应用 setup
-///       ├── tokio::io::duplex(64KB) → (server_io, client_io)
-///       ├── tokio::spawn KbServer::serve(server_io)   [后台 task 永驻]
-///       └── ().serve(client_io).await               [拿 client]
-///                  ↓
-///            存到 AppState.mcp_internal
-/// ```
-///
-/// 主应用和 sidecar 各自独立打开 SQLite Connection，WAL + busy_timeout 保证并发安全。
-/// `writable=true`：自家应用本身就有完整写权限，写工具默认开启。
-fn setup_internal_mcp(
-    db_path: &Path,
-) -> Result<std::sync::Arc<state::InternalMcpClient>, Box<dyn std::error::Error + Send + Sync>> {
-    use rmcp::ServiceExt;
-
-    let db_path = db_path.to_path_buf();
-
-    // setup 闭包不在 tokio runtime 上下文里，用 tauri::async_runtime::block_on 同步等待
-    tauri::async_runtime::block_on(async move {
-        let (server_io, client_io) = tokio::io::duplex(64 * 1024);
-
-        let kb_db = kb_core::KbDb::open(&db_path, /* writable */ true)
-            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()))?;
-        // 工具白名单（#5）：构造时按 app_config 裁剪工具集（改白名单后重启应用生效）
-        let keep = kb_db.read_tool_whitelist();
-        let kb_server = kb_core::KbServer::new_filtered(kb_db, /* writable */ true, keep);
-
-        // 后台 task：跑 server，永远不退出（除非 client 断开）
-        tauri::async_runtime::spawn(async move {
-            match kb_server.serve(server_io).await {
-                Ok(running) => {
-                    if let Err(e) = running.waiting().await {
-                        log::warn!("[mcp-internal] server waiting error: {e}");
-                    }
-                }
-                Err(e) => log::error!("[mcp-internal] server start failed: {e}"),
-            }
-        });
-
-        // client 端用 () handler（不响应 server-initiated 请求）
-        let client = ()
-            .serve(client_io)
-            .await
-            .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()))?;
-
-        Ok(std::sync::Arc::new(client))
-    })
-}
 
 /// 当前进程使用的 app_data 子目录名。
 ///
@@ -1022,25 +970,8 @@ pub fn run() {
                 );
             }
 
-            // ─── 启动 in-memory MCP server（kb-core）─────────────
-            // tokio::io::duplex 当 transport，KbServer 跑在后台 task，
-            // client 端存到 AppState 供 commands::mcp::* 用。
-            // 失败不阻断启动 —— 用 Option 包装，commands 拿不到时报"未就绪"
-            let mcp_internal = setup_internal_mcp(&db_path).map_or_else(
-                |e| {
-                    log::warn!(
-                        "[mcp-internal] 初始化失败，自家 AI 对话页将无法用 MCP 内置工具: {e}"
-                    );
-                    None
-                },
-                |c| {
-                    log::info!("[mcp-internal] in-memory MCP server 就绪（kb-core 27 工具）");
-                    Some(c)
-                },
-            );
-
             // 注册全局状态
-            let state = AppState::new(db, data_dir_root.clone(), mcp_internal, lock_file);
+            let state = AppState::new(db, data_dir_root.clone(), lock_file);
 
             // 若由"双击 md 文件"启动，暂存路径到 state，
             // 等前端 mount 完成后通过 take_pending_open_md_path 取走并打开
@@ -1146,42 +1077,6 @@ pub fn run() {
                 services::task_reminder::run_reminder_loop(app_handle_reminder).await;
             });
 
-            // MCP HTTP 服务：上次用户开着的话，启动时按存的配置自动拉起，
-            // 否则用户重启应用后要手动再开一次，很反直觉。
-            #[cfg(desktop)]
-            {
-                let app_handle_mcp_http = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    use crate::services::mcp_http as h;
-                    let Some(state) = app_handle_mcp_http.try_state::<AppState>() else {
-                        return;
-                    };
-                    let get = |k: &str| state.db.get_config(k).ok().flatten().unwrap_or_default();
-                    if get(h::KEY_ENABLED) != "1" {
-                        return;
-                    }
-                    let token = get(h::KEY_TOKEN);
-                    if token.trim().is_empty() {
-                        log::warn!("[mcp-http] 已启用但没有 Token，跳过自动启动");
-                        return;
-                    }
-                    let port = get(h::KEY_PORT).parse::<u16>().unwrap_or(h::DEFAULT_PORT);
-                    let db_path = state.data_dir.join(db_file_name());
-                    if let Err(e) = h::start(
-                        &state.mcp_http,
-                        db_path,
-                        port,
-                        token,
-                        get(h::KEY_WRITABLE) == "1",
-                        get(h::KEY_BIND_LAN) == "1",
-                    )
-                    .await
-                    {
-                        log::warn!("[mcp-http] 自动启动失败: {e}");
-                    }
-                });
-            }
-
             // 文件夹自动导入：盯住用户指定目录，新落地的 .md 自动进库
             // （浏览器剪藏插件把网页存成 Markdown 后不用再手动导入）。
             // 默认关闭，循环里读 app_config 判断，没开启就空转。
@@ -1192,12 +1087,6 @@ pub fn run() {
                     services::folder_watch::run_folder_watch_loop(app_handle_watch).await;
                 });
             }
-
-            // 定时推送调度器（独立于待办提醒，骨架同源）
-            let app_handle_push = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                services::push::scheduler::run_push_loop(app_handle_push).await;
-            });
 
             // 外部写入侦测：外部 agent（kb-mcp 独立进程）/ in-memory MCP 写笔记后，
             // 轮询 PRAGMA data_version 感知变化并 emit("db:external-changed")，前端据此刷新列表。
@@ -1232,23 +1121,8 @@ pub fn run() {
         // ─── Command 注册 ───────────────────────────
         .invoke_handler(tauri::generate_handler![
             // MCP 内置 server（kb-core 27 工具）
-            commands::mcp::mcp_internal_list_tools,
-            commands::mcp::mcp_internal_call_tool,
             // #5 工具白名单（按需裁剪工具集省 token）
-            commands::mcp::mcp_list_all_tools,
-            commands::mcp::mcp_get_tool_whitelist,
-            commands::mcp::mcp_set_tool_whitelist,
-            commands::mcp::mcp_runtime_info,
-            commands::mcp::mcp_get_claude_md_template,
-            commands::mcp::mcp_list_servers,
-            commands::mcp::mcp_create_server,
-            commands::mcp::mcp_update_server,
-            commands::mcp::mcp_delete_server,
-            commands::mcp::mcp_set_server_enabled,
             // #8 插件层（插件 = 外部 MCP server）
-            commands::mcp::plugin_install_from_manifest,
-            commands::mcp::plugin_install_from_file,
-            commands::mcp::plugin_scaffold,
             // #9 本地 OCR（RapidOCR sidecar）
             // ⚠️ generate_handler! 宏不解析 #[cfg] 属性（v1 会报 expected identifier），
             //    且这两个函数本身没有平台 gate（内部按 cfg 分支降级），故直接列出。
@@ -1256,20 +1130,7 @@ pub fn run() {
             commands::ocr::ocr_image,
             commands::ocr::ocr_pdf,
             // 外部 MCP server 子进程仅桌面端
-            commands::mcp::mcp_external_list_tools,
-            commands::mcp::mcp_external_call_tool,
-            commands::mcp::mcp_install_to_client,
-            commands::mcp::mcp_uninstall_from_client,
-            commands::mcp::mcp_check_install_status,
-            commands::mcp::mcp_get_setup_doc,
-            commands::mcp::mcp_get_ai_writable,
-            commands::mcp::mcp_set_ai_writable,
             // MCP HTTP 服务（桌面端专属：移动端不开监听端口）
-            commands::mcp::get_mcp_http_config,
-            commands::mcp::get_mcp_http_status,
-            commands::mcp::regenerate_mcp_http_token,
-            commands::mcp::start_mcp_http,
-            commands::mcp::stop_mcp_http,
             // 系统模块
             commands::system::greet,
             commands::system::get_system_info,
@@ -1445,64 +1306,10 @@ pub fn run() {
             commands::links::find_note_id_by_title_loose,
             commands::links::get_graph_data,
             // AI 模块
-            commands::ai::list_ai_models,
-            commands::ai::create_ai_model,
-            commands::ai::update_ai_model,
-            commands::ai::delete_ai_model,
-            commands::ai::set_default_ai_model,
-            commands::ai::test_ai_model,
             // P0-1b：Key 不回显后，已保存模型的测试与分享各自走显式入口
-            commands::ai::test_saved_ai_model,
-            commands::ai::list_ai_provider_presets,
-            commands::ai::verify_ai_model_endpoint,
-            commands::ai::parse_ai_profile_text,
-            commands::ai::ai_model_to_ai_profile,
-            commands::ai::fix_legacy_ai_model,
-            commands::ai::get_ai_model_api_key,
-            commands::ai::list_ai_conversations,
-            commands::ai::create_ai_conversation,
-            commands::ai::delete_ai_conversation,
-            commands::ai::delete_ai_conversations_before,
-            commands::ai::rename_ai_conversation,
-            commands::ai::update_ai_conversation_model,
-            commands::ai::list_ai_messages,
-            commands::ai::delete_ai_messages_from,
-            commands::ai::send_ai_message,
-            commands::ai::cancel_ai_generation,
-            commands::ai::ai_write_assist,
-            commands::ai::ai_suggest_prompt,
-            commands::ai::cancel_ai_write_assist,
-            commands::ai::ai_plan_today,
-            commands::ai::ai_extract_task_from_text,
-            commands::ai::ai_plan_from_goal,
             // Excel 解析仅桌面端（calamine 移动端编译失败，T-M013 后再决策）
-            commands::ai::ai_plan_from_excel,
-            commands::ai::ai_parse_excel,
-            commands::ai::ai_parse_attachment,
-            commands::ai::undo_task_batch,
-            commands::ai::ai_draft_note,
-            commands::ai::set_ai_conversation_attached_notes,
-            commands::ai::set_ai_conversation_scope_folder,
-            commands::ai::set_ai_conversation_preset,
-            commands::ai::archive_ai_conversation_to_note,
-            commands::ai::get_or_create_companion_conversation,
             // 提示词库模块
-            commands::prompt::list_prompts,
-            commands::prompt::get_prompt,
-            commands::prompt::create_prompt,
-            commands::prompt::update_prompt,
-            commands::prompt::delete_prompt,
-            commands::prompt::set_prompt_enabled,
             // 定时推送
-            commands::push::list_push_jobs,
-            commands::push::get_push_job,
-            commands::push::create_push_job,
-            commands::push::update_push_job,
-            commands::push::delete_push_job,
-            commands::push::set_push_job_enabled,
-            commands::push::run_push_job_now,
-            commands::push::list_push_run_logs,
-            commands::push::get_push_popup_data,
             // 导入模块
             commands::import::scan_markdown_folder,
             commands::import::import_selected_files,

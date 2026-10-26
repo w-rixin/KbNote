@@ -1,12 +1,3 @@
-# ─── Workspace 根 ────────────────────────────────────
-# 引入 mcp/ 子 crate 用来构建独立的 kb-mcp.exe（MCP Server sidecar）。
-# 主 package（kbnote）仍然是 root member，原有 cargo build 行为不变。
-# kb-mcp 完全独立、不依赖主包，避免被 cdylib + tauri 牵扯，编译出独立 binary。
-[workspace]
-# kb-core: 共享 lib，KbDb + KbServer + 27 个工具实现，主应用和 kb-mcp 都依赖它
-# mcp: stdio MCP server binary，依赖 kb-core
-members = ["kb-core", "mcp"]
-
 [package]
 name = "kbnote"
 version = "1.0.0"
@@ -199,12 +190,6 @@ encoding_rs = "0.8"
 # 这几条规则手写必踩坑，而 csv crate 纯 Rust、无 C 依赖、双端可编。
 # 编码嗅探复用已有的 chardetng + encoding_rs（见 services::import::read_text_auto_encoding）。
 csv = "1"
-# kb-core: 共享的 MCP server 实现（KbDb + KbServer + 27 工具），
-# 主应用在进程内 spawn KbServer，让自家 AI 对话页通过 MCP 协议消费同一套工具
-kb-core = { path = "kb-core" }
-# rmcp client：in-memory transport 调用同进程 KbServer（双端通用）
-# transport-child-process 仅桌面端用（spawn 外部 MCP server），移到 target.desktop
-rmcp = { version = "1.5", features = ["client"] }
 # T-014 网页剪藏 v2：Mozilla Readability 的纯 Rust 移植，本地提取网页正文。
 # 取代原先绕道 r.jina.ai 的做法（该服务已取消匿名额度 → 401，且国内移动网络常连不上）。
 # 选它而非 `readability` crate：后者 2023 年起停更；dom_smoothie 仍在活跃维护，
@@ -250,18 +235,6 @@ image = { version = "0.25", default-features = false, features = [
     "gif",
     "bmp",
 ] }
-# rmcp 桌面端额外能力：
-# - transport-child-process: spawn 外部 MCP server 子进程（移动端 fork/spawn 受限）
-# - transport-streamable-http-server: 把自家 KbServer 以 HTTP 暴露给外部 agent。
-#   该 feature 只拉 uuid/http/bytes/tower-service 等轻量件，**不含** HTTP 服务器本身
-#   （它给的是一个 tower::Service），故下面还要 axum 来承载。
-rmcp = { version = "1.5", features = [
-    "transport-child-process",
-    "transport-streamable-http-server",
-] }
-# axum：承载上面那个 tower::Service。选它而不是裸 hyper —— tower/hyper 本来就在依赖树里
-# （reqwest 拉的），axum 是增量最小又不用手写路由/中间件的选择。
-axum = { version = "0.8", default-features = false, features = ["http1", "tokio"] }
 # Excel / ODS 解析（calamine 在 Android target 编译失败，先桌面端独享；
 # 移动端按 T-M013 改单文件导入流程后再决策）
 calamine = "0.28"

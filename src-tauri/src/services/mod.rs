@@ -1,11 +1,8 @@
-pub mod ai;
-pub mod anthropic;
 pub mod app_lock;
 pub mod asr;
 pub mod asset_path;
 pub mod cards;
 // AI 回答的引用标记解析 + 白名单校验（模型自报的引用编号不可直接采信）
-pub mod citations;
 pub mod attachment;
 pub mod config;
 pub mod converter;
@@ -42,7 +39,6 @@ pub mod http_client;
 pub mod image;
 pub mod image_download;
 pub mod legacy_api_url;
-pub mod model_service;
 pub mod import;
 pub mod import_attachments;
 pub mod import_video_attachments;
@@ -51,11 +47,9 @@ pub mod markdown;
 // 外部 MCP server 子进程管理仅桌面端：rmcp transport-child-process 在桌面端 dependencies
 // 移动端 fork/spawn 受限，砍掉外部 MCP，仅保留 in-memory 内置 server（kb-core）
 #[cfg(desktop)]
-pub mod mcp_client;
 // MCP HTTP 服务：把自家知识库暴露给外部 agent。仅桌面端
 // （移动端没有"被别的进程连"的场景，也不该在手机上开监听端口）
 #[cfg(desktop)]
-pub mod mcp_http;
 pub mod note;
 pub mod note_excerpt;
 #[cfg(desktop)]
@@ -71,17 +65,14 @@ pub mod popout_window;
 pub mod dataview;
 pub mod plugin;
 pub mod project;
-pub mod prompt;
 // 待办提醒自定义提示音文件管理（复制进 app_data_dir 以落进 assetProtocol scope）
 pub mod reminder_sound;
-pub mod push;
 pub mod quick_capture;
 pub mod safe_filename;
 pub mod search;
 // 全局快捷键仅桌面端可用
 #[cfg(desktop)]
 pub mod shortcut;
-pub mod skills;
 pub mod snapshot;
 pub mod source_file;
 pub mod source_writeback;

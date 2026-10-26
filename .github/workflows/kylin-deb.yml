@@ -218,14 +218,6 @@ jobs:
             echo "Cargo.toml 的 updater feature 已摘除"
           fi
 
-      # kb-mcp sidecar：必须在 tauri build 之前生成。
-      # tauri.conf.json 的 bundle.externalBin 写的是 "binaries/kb-mcp"，
-      # Tauri 会按当前 target triple 展开成 binaries/kb-mcp-aarch64-unknown-linux-gnu，
-      # 找不到就报 "path matching binaries/kb-mcp-aarch64-unknown-linux-gnu not found."。
-      # 本机 runner 就是 aarch64，故不需要 --target（走 host triple）。
-      - name: Build kb-mcp sidecar
-        run: pnpm build:mcp
-
       # ─── 为什么拆成 3 步，而不是一句 `pnpm tauri build` ──────────────
       # `tauri build` 内部依次做三件事：跑 beforeBuildCommand（vite build）→
       # cargo build --release → bundle。任何一步失败，对外只表现为

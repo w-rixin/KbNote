@@ -1,4 +1,3 @@
-pub mod ai;
 pub mod app_lock;
 pub mod asr;
 pub mod attachment;
@@ -20,7 +19,6 @@ pub mod hidden_pin;
 pub mod image;
 pub mod import;
 pub mod links;
-pub mod mcp;
 // 移动端"检查更新"（桌面端用 tauri-plugin-updater，不需要这个）
 #[cfg(mobile)]
 pub mod mobile_update;
@@ -30,11 +28,9 @@ pub mod ocr;
 pub mod orphan;
 pub mod pdf;
 pub mod projects;
-pub mod prompt;
 // 待办提醒自定义提示音（导入 / 列举 / 删除音频文件）
 pub mod reminder_sound;
 pub mod snapshot;
-pub mod push;
 pub mod search;
 // 全局快捷键仅桌面端可用（移动端无此概念）
 #[cfg(desktop)]
