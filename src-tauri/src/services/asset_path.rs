@@ -264,11 +264,12 @@ mod tests {
     fn empty_data_dir_falls_back_to_segment_scan() {
         let empty = Path::new("");
 
-        let win = Path::new(r"C:\Users\me\AppData\Roaming\com.agilefr.kbnote\kb_assets\images\1\x.png");
+        // 正斜杠形态的 Windows 路径：`/` 在任何平台都是分隔符，能正常按段扫描
+        let win = Path::new("C:/Users/me/AppData/Roaming/com.agilefr.kbnote/kb_assets/images/1/x.png");
         assert_eq!(
             abs_to_rel(win, empty).as_deref(),
             Some("kb_assets/images/1/x.png"),
-            "Windows 绝对路径必须收敛到已知资产段"
+            "Windows 绝对路径（正斜杠）必须收敛到已知资产段"
         );
 
         let posix = Path::new("/Users/me/Library/Application Support/com.agilefr.kbnote/pdfs/2/a.pdf");
@@ -280,6 +281,29 @@ mod tests {
 
         // 不含任何已知资产段 → None（保留原样，不瞎猜）
         assert!(abs_to_rel(Path::new("/usr/share/x.png"), empty).is_none());
+    }
+
+    /// 反斜杠形态的 Windows 路径 —— **只在 Windows 上成立**。
+    ///
+    /// 在 Linux / macOS 上 `\` 是合法的文件名字符，于是 `C:\Users\me\...` 整个
+    /// 字符串被 `Path` 视为**单个文件名**：`components()` 只有一段，
+    /// 永远扫不到 `kb_assets` → `abs_to_rel` 必然返回 `None`。
+    ///
+    /// 所以这个断言在 Linux CI（本项目只有 aarch64 Linux runner）上必挂，
+    /// 不是逻辑回归而是平台语义差异。留在 Windows 下由本地 / Windows CI 验证；
+    /// Linux 侧的等价覆盖由上面那个测试的正斜杠分支承担。
+    #[cfg(windows)]
+    #[test]
+    fn empty_data_dir_falls_back_to_segment_scan_win_backslash() {
+        let empty = Path::new("");
+        let win = Path::new(
+            r"C:\Users\me\AppData\Roaming\com.agilefr.kbnote\kb_assets\images\1\x.png",
+        );
+        assert_eq!(
+            abs_to_rel(win, empty).as_deref(),
+            Some("kb_assets/images/1/x.png"),
+            "Windows 反斜杠绝对路径必须收敛到已知资产段"
+        );
     }
 
     /// 回归：strip_prefix 命中但结果为空（abs == data_dir）不应返回空 rel

@@ -3327,7 +3327,26 @@ mod v54_asset_path_tests {
         assert!(out.contains("](kb-asset://attachments/5/report.pdf)"), "{out}");
     }
 
-    /// 裸绝对路径（最早期写法），出现在 src 属性里
+    /// 裸绝对路径（最早期写法），出现在 src 属性里 —— POSIX 形态，全平台验证。
+    ///
+    /// 走的是同一条链路：`resolve_content_url`（空 data_dir）→ `abs_to_rel` 按
+    /// 已知资产段截取。所以这个用例等价于下面 Windows 反斜杠那条的覆盖，
+    /// 且在任何 OS 上都能跑 —— Linux CI 靠它守住这段逻辑。
+    #[test]
+    fn converts_bare_posix_absolute_in_src() {
+        let src = r#"<img src="/home/me/my-kb/dev-kb_assets/images/3/pic.png" alt="x">"#;
+        let (out, n) = normalize_asset_urls_in_content(src);
+        assert_eq!(n, 1, "{out}");
+        assert!(out.contains("kb-asset://dev-kb_assets/images/3/pic.png"), "{out}");
+    }
+
+    /// 同上，Windows 反斜杠形态 —— **只在 Windows 上成立**。
+    ///
+    /// Linux / macOS 上 `\` 是合法文件名字符，`E:\my\kb\dev-kb_assets\...` 被 `Path`
+    /// 视作单个文件名，`abs_to_rel` 扫不到段名 → 恒为 None，断言必然失败。
+    /// 这是平台语义差异而非逻辑回归，故限定 Windows；Linux 侧的等价覆盖
+    /// 由上面 `converts_bare_posix_absolute_in_src` 承担。
+    #[cfg(windows)]
     #[test]
     fn converts_bare_windows_absolute_in_src() {
         let src = r#"<img src="E:\my\kb\dev-kb_assets\images\3\pic.png" alt="x">"#;

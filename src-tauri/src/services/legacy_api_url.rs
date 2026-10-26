@@ -55,6 +55,17 @@ pub fn legacy_provider_key(old: &str) -> &'static str {
         "ollama" => "ollama",
         "lmstudio" => "lmstudio",
         "vllm" => "vllm",
+        // 🔴 这两个是**特例**，不能落进下面的 `_ => "custom"` 兜底。
+        //    kb 原实现（ai_profile::preset）里 claude / hunyuan 都没有对应的
+        //    原生对话实现，所以统一归到「OpenAI 兼容·自定义」这个更具体的 preset，
+        //    而不是通用的 custom —— 两者在模型能力探测上语义不同。
+        //    删减 AI 时若把它们当成"可省略的厂商分支"一并砍掉，
+        //    v61 → v62 的迁移回归测试（schema.rs::v62_rewrites_ai_models_for_ai_profile）
+        //    会立刻挂：期望 openai_compatible_custom，实际 custom。
+        //    迁移链对 KbNote 本身无功能意义（ai_models 表恒空），但只要老库要升级，
+        //    行为就必须与 kb 逐字一致，否则用户库里的数据会被改写成另一种语义。
+        "claude" => "openai_compatible_custom",
+        "hunyuan" => "openai_compatible_custom",
         _ => "custom",
     }
 }
