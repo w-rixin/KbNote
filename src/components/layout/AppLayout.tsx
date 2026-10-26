@@ -299,7 +299,7 @@ export function AppLayout() {
           message.info("已根据最新 md 文件同步笔记内容");
         }
         // Q-003：系统快捷菜单 / argv 启动场景，同样需要首次引导（用户报告就是这条路径下找不到保存）
-        // 临时编辑不需要这条引导：它讲的是"已加入知识库"，与临时模式的预期相反
+        // 临时编辑不需要这条引导：它讲的是"已加入笔记库"，与临时模式的预期相反
         if (!result.isScratch) showExternalMdIntroOnce();
         useAppStore.getState().bumpNotesRefresh();
         navigate(`/notes/${result.noteId}`);

@@ -102,7 +102,7 @@ pub fn install(crash_dir: PathBuf) {
         let report = build_report(info);
 
         // 1) stderr（dev 模式 / 从命令行启动时可直接看到）
-        eprintln!("\n===== 知识库 崩溃 =====\n{report}\n=======================");
+        eprintln!("\n===== KbNote 崩溃 =====\n{report}\n=======================");
 
         // 2) 写独立崩溃日志（忽略一切写盘错误：hook 里绝不能再失败）
         let saved_path = write_report(&crash_dir, &report);
@@ -136,7 +136,7 @@ pub fn report_fatal(crash_dir: PathBuf, message: &str) {
         version = env!("CARGO_PKG_VERSION"),
     );
 
-    eprintln!("\n===== 知识库 启动失败 =====\n{report}\n===========================");
+    eprintln!("\n===== KbNote 启动失败 =====\n{report}\n===========================");
     let saved_path = write_report(&crash_dir, &report);
 
     #[cfg(windows)]
@@ -153,7 +153,7 @@ pub fn report_fatal(crash_dir: PathBuf, message: &str) {
 pub fn show_startup_notice(title: &str, body: &str) {
     NOTICE_SHOWN.store(true, Ordering::SeqCst);
     eprintln!("
-===== 知识库 无法启动 =====
+===== KbNote 无法启动 =====
 {body}
 ===========================");
     #[cfg(windows)]
@@ -248,13 +248,13 @@ fn show_native_dialog(report: &str, saved_path: Option<&Path>) {
     };
 
     let body = format!(
-        "知识库遇到问题需要关闭，很抱歉。\n\n\
+        "KbNote 遇到问题需要关闭，很抱歉。\n\n\
          {summary}\n\n\
          {log_hint}\n\n\
          如果反复出现，请把上面的崩溃日志文件发给开发者协助排查。"
     );
 
-    let w_title = to_wide("知识库 - 程序遇到问题");
+    let w_title = to_wide("KbNote - 程序遇到问题");
     let w_body = to_wide(&body);
     // SAFETY: 两个宽字符串均以 NUL 结尾且存活到调用结束；hwnd 传 null 表示无父窗口。
     unsafe {

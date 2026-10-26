@@ -15,7 +15,7 @@ use crate::state::AppState;
 /// 批量导出笔记为 Markdown 文件
 ///
 /// 入参 `output_dir` 是用户选择的父目录；服务会在其下自动创建一层
-/// `知识库导出_YYYYMMDD_HHmmss/` 作为实际导出根（结果中的 `root_dir`）。
+/// `KbNote导出_YYYYMMDD_HHmmss/` 作为实际导出根（结果中的 `root_dir`）。
 ///
 /// `recursive`：指定 `folder_id` 时是否连子文件夹一起导出。缺省 `false` 保持老调用方行为不变。
 #[tauri::command]

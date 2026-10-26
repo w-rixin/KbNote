@@ -20,7 +20,7 @@ export function showExternalMdIntroOnce() {
     return;
   }
   notification.info({
-    message: "已加入本地知识库",
+    message: "已加入 KbNote",
     description:
       "这条笔记已纳入应用数据库。编辑保存后会自动写回原 .md 文件，下次从系统打开同一文件会复用这条笔记，编辑内容不会丢。",
     placement: "bottomRight",

@@ -1405,16 +1405,6 @@ function MetricItem({
   );
 }
 
-// ─── 移动端 Wrapper（T-M008）─────────────────────────
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileHome } from "./MobileHome";
-
-/**
- * Wrapper：根据视口/平台决定渲染桌面版 or 移动版。
- * 注意：必须用 wrapper 模式而不是函数体内 early-return，
- * 否则 React Hooks 顺序会因平台不同而变化（违反 Hooks 规则）。
- */
-export default function HomePage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileHome /> : <DesktopHomePage />;
-}
+// 桌面单栏：KbNote 砍掉了移动端组件树，原来的 useIsMobile Wrapper 与
+// MobileHome 一并删除，这里直接把桌面版作为页面默认导出。
+export default DesktopHomePage;

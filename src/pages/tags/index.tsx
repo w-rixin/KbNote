@@ -302,10 +302,5 @@ function DesktopTagsPage() {
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileTags } from "./MobileTags";
-
-export default function TagsPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileTags /> : <DesktopTagsPage />;
-}
+// 移动端组件树已删，直接导出桌面版（原 useIsMobile Wrapper 移除）。
+export default DesktopTagsPage;

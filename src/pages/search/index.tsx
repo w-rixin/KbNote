@@ -679,10 +679,5 @@ function TaskRow({
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileSearch } from "./MobileSearch";
-
-export default function SearchPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileSearch /> : <DesktopSearchPage />;
-}
+// 移动端组件树已删，直接导出桌面版（原 useIsMobile Wrapper 移除）。
+export default DesktopSearchPage;

@@ -1,5 +1,5 @@
 /**
- * 打开外部 .md 时的方式选择（加入知识库 / 临时编辑）。
+ * 打开外部 .md 时的方式选择（加入笔记库 / 临时编辑）。
  *
  * ## 为什么要问
  *
@@ -26,7 +26,7 @@ import { Modal } from "antd";
 
 const PREF_KEY = "open_md_mode";
 
-/** 打开方式：进知识库 / 临时编辑 */
+/** 打开方式：进笔记库 / 临时编辑 */
 export type OpenMdMode = "library" | "scratch";
 
 /** 读已记住的偏好；返回 null 表示"每次询问" */
@@ -89,7 +89,7 @@ export function resolveOpenMdMode(fileName: string): Promise<OpenMdMode> {
       content: (
         <div className="space-y-3 pt-1">
           <div>
-            <div className="font-medium">加入知识库</div>
+            <div className="font-medium">加入笔记库</div>
             <div className="text-xs opacity-65">
               参与全文搜索、双向链接、AI 问答，出现在笔记列表里。
             </div>
@@ -112,7 +112,7 @@ export function resolveOpenMdMode(fileName: string): Promise<OpenMdMode> {
           </label>
         </div>
       ),
-      okText: "加入知识库",
+      okText: "加入笔记库",
       cancelText: "临时编辑",
       onOk: () => finish("library"),
       onCancel: () => finish("scratch"),

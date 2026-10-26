@@ -1,8 +1,10 @@
 /**
  * 右下角批量导入悬浮条。
  *
- * 挂在 LayoutSwitch（路由根）上，桌面 / 移动共用一份，所以**不随页面卸载** ——
+ * 挂在 LayoutSwitch（路由根）上，所以**不随页面卸载** ——
  * 导 30 个 PDF 的时候去写笔记、翻文件夹，进度仍在角落里跑。
+ *
+ * KbNote 只保留桌面布局：原先给移动端 Tab 栏留的底部避让已移除，固定贴右下角。
  *
  * 定位说明：只显示"正在进行 / 刚结束"的批量导入。成败明细不归它管
  * （成功由 message.success、失败由带「复制清单」的弹窗负责），
@@ -11,7 +13,6 @@
 import { Progress, Tooltip, Typography, theme } from "antd";
 import { X } from "lucide-react";
 
-import { useIsMobile } from "@/hooks/useIsMobile";
 import { useAppStore } from "@/store";
 
 const { Text } = Typography;
@@ -19,7 +20,6 @@ const { Text } = Typography;
 export function ImportStatusDock() {
   const jobs = useAppStore((s) => s.importJobs);
   const dismiss = useAppStore((s) => s.dismissImportJob);
-  const isMobile = useIsMobile();
   const { token } = theme.useToken();
 
   if (jobs.length === 0) return null;
@@ -29,10 +29,7 @@ export function ImportStatusDock() {
       style={{
         position: "fixed",
         right: 16,
-        // 移动端底部有 64px 的 Tab 栏 + 安全区，抬高到它上面（与 MobileLayout 的 FAB 同一算法）
-        bottom: isMobile
-          ? `calc(64px + env(safe-area-inset-bottom, 0px) + 16px)`
-          : 16,
+        bottom: 16,
         // 低于 antd Modal（1000）：导入失败清单弹出来时该盖住悬浮条，而不是被它压住
         zIndex: 900,
         display: "flex",

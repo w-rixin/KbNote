@@ -998,7 +998,7 @@ function DesktopSettingsPage() {
             </p>
             <p style={{ marginBottom: 4 }}>结构如下：</p>
             <pre style={{ fontSize: 12, background: "var(--ant-color-fill-tertiary)", padding: 8, borderRadius: 4, margin: 0 }}>
-{`📁 知识库导出_YYYYMMDD_HHmmss/
+{`📁 KbNote导出_YYYYMMDD_HHmmss/
   ├─ <文件夹>/
   │   ├─ <笔记>.md
   │   └─ <笔记>.assets/   (图片+附件)
@@ -1500,7 +1500,7 @@ function DesktopSettingsPage() {
           <div>
             <div>开机自动启动</div>
             <Text type="secondary" style={{ fontSize: 12 }}>
-              登录系统后自动打开知识库，用于定时提醒等后台任务
+              登录系统后自动打开 KbNote
             </Text>
           </div>
           <Switch
@@ -2455,7 +2455,7 @@ function DesktopSettingsPage() {
             style={{ width: 160 }}
             options={[
               { value: "ask", label: "每次询问（默认）" },
-              { value: "library", label: "加入知识库" },
+              { value: "library", label: "加入笔记库" },
               { value: "scratch", label: "临时编辑" },
             ]}
           />
@@ -3500,10 +3500,5 @@ function DesktopSettingsPage() {
   );
 }
 
-import { useIsMobile } from "@/hooks/useIsMobile";
-import { MobileMe } from "./MobileMe";
-
-export default function SettingsPage() {
-  const isMobile = useIsMobile();
-  return isMobile ? <MobileMe /> : <DesktopSettingsPage />;
-}
+// 移动端组件树已删，直接导出桌面版（原 useIsMobile Wrapper 移除）。
+export default DesktopSettingsPage;

@@ -297,6 +297,8 @@ export default function AboutPage() {
               专注于 Java 后端 + 前端全栈工程实践，深耕大模型应用与 Agent
               架构落地（RAG、工具调用、多智能体编排、知识库工程化）。
               这款本地知识库即源于「把 AI 真正用进自己日常工作流」的长期实验。
+              KbNote 是它的精简派生版：去掉 AI、同步与协作，只留本地离线
+              也能完整使用的那套笔记能力。
             </Typography.Paragraph>
           </div>
         </div>
@@ -357,7 +359,7 @@ export default function AboutPage() {
                 </Text>
               </Tooltip>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                （添加时请备注「来自知识库」）
+                （添加时请备注「来自 KbNote」）
               </Text>
             </div>
           </Descriptions.Item>
@@ -452,7 +454,7 @@ export default function AboutPage() {
             数据目录下的核心文件 / 子目录：
           </Typography.Paragraph>
           <ul style={{ fontSize: 12, paddingLeft: 20, margin: "0 0 8px", color: "rgba(0,0,0,0.45)" }}>
-            <li style={{ marginBottom: 2 }}><code>app.db</code> — 笔记 / 文件夹 / 标签 / 链接 / AI 对话 / 待办 / 加密数据等全部元数据（SQLite）</li>
+            <li style={{ marginBottom: 2 }}><code>app.db</code> — 笔记 / 文件夹 / 标签 / 待办等全部元数据（SQLite）</li>
             <li style={{ marginBottom: 2 }}><code>kb_assets/</code> — 笔记内嵌图片（含 <code>kb_assets/videos/</code> 子目录的视频）</li>
             <li style={{ marginBottom: 2 }}><code>pdfs/</code> — 导入的 PDF 原始文件</li>
             <li style={{ marginBottom: 2 }}><code>sources/</code> — 导入的 Word（.docx/.doc）原始文件</li>

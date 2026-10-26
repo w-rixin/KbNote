@@ -55,7 +55,7 @@ impl MergeExportService {
     ///
     /// - `folder_id = None`：全库（章节按文件夹路径组织）
     /// - `recursive`：指定文件夹时是否含子文件夹，与 `export_notes` 同口径
-    /// - `root_title`：文档顶层 `# 标题`，一般传文件夹名；空则用"知识库导出"
+    /// - `root_title`：文档顶层 `# 标题`，一般传文件夹名；空则用"KbNote 导出"
     pub fn export_merged(
         db: &Database,
         instance_data_dir: &Path,
@@ -74,7 +74,7 @@ impl MergeExportService {
         }
 
         let title = if root_title.trim().is_empty() {
-            "知识库导出"
+            "KbNote 导出"
         } else {
             root_title.trim()
         };

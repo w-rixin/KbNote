@@ -14,7 +14,7 @@ pub struct ExportService;
 impl ExportService {
     /// 导出笔记为 Markdown 文件
     ///
-    /// 行为：在用户选定的 `output_dir` 下自动创建一层 `知识库导出_YYYYMMDD_HHmmss/`
+    /// 行为：在用户选定的 `output_dir` 下自动创建一层 `KbNote导出_YYYYMMDD_HHmmss/`
     /// 作为实际导出根目录，避免散落污染目标目录。
     ///
     /// - `output_dir`: 用户选择的父目录
@@ -36,7 +36,7 @@ impl ExportService {
 
         // 在父目录下创建带时间戳的导出根目录（包一层），重名时自动加 _1/_2 后缀
         let stamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-        let root_name = unique_dir_name(parent_path, &format!("知识库导出_{}", stamp));
+        let root_name = unique_dir_name(parent_path, &format!("KbNote导出_{}", stamp));
         let output_path = parent_path.join(&root_name);
         std::fs::create_dir_all(&output_path)?;
 

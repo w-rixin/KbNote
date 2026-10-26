@@ -850,14 +850,14 @@ pub fn run() {
                     // 用什么弹（notification？启动页？）是待定的产品决策。
                     #[cfg(desktop)]
                     crash_handler::show_startup_notice(
-                        "知识库 - 需要升级应用",
+                        "KbNote - 需要升级应用",
                         &format!(
                             "{e}
 
                              你的数据没有被改动，仍完整保存在：
                              {db_path_str}
 
-                             请安装最新版本的知识库后再打开。
+                             请安装最新版本的 KbNote 后再打开。
                              若确实要用旧版，请先整体备份上面这个目录。"
                         ),
                     );

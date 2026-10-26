@@ -1049,7 +1049,7 @@ function currentExportFonts(): ExportFonts | undefined {
 /** 导出 API */
 export const exportApi = {
   /** 批量导出笔记。`outputDir` 是用户选择的父目录，
-   *  实际会在其下创建一层 `知识库导出_YYYYMMDD_HHmmss/` 作为导出根（见返回值 root_dir） */
+   *  实际会在其下创建一层 `KbNote导出_YYYYMMDD_HHmmss/` 作为导出根（见返回值 root_dir） */
   exportNotes: (outputDir: string, folderId?: number | null, recursive?: boolean) =>
     invoke<ExportResult>("export_notes", { outputDir, folderId, recursive }),
   /** 合并导出：把一个文件夹（或全库）合成**单个**带章节结构的文件。

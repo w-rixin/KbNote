@@ -275,7 +275,7 @@ pub fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
     let out_base = crate::framework_app_data_dir(&app)
         .map_err(|e| format!("无法确定诊断包输出目录: {e}"))?;
     let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
-    let zip_path = out_base.join(format!("知识库-诊断包-{stamp}.zip"));
+    let zip_path = out_base.join(format!("KbNote-诊断包-{stamp}.zip"));
 
     let writer = std::fs::File::create(&zip_path).map_err(|e| format!("创建诊断包失败: {e}"))?;
     let mut zip = zip::ZipWriter::new(writer);
@@ -284,7 +284,7 @@ pub fn export_diagnostics(app: tauri::AppHandle) -> Result<String, String> {
 
     // info.txt：基础环境信息
     let info = format!(
-        "知识库 诊断信息\n\
+        "KbNote 诊断信息\n\
          生成时间: {}\n\
          应用版本: {}\n\
          操作系统: {}\n\

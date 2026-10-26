@@ -1089,7 +1089,7 @@ export interface ExportResult {
   errors: string[];
   /** 用户选择的父目录 */
   output_dir: string;
-  /** 实际创建的导出根目录（在 output_dir 下自动包一层 知识库导出_YYYYMMDD_HHmmss） */
+  /** 实际创建的导出根目录（在 output_dir 下自动包一层 KbNote导出_YYYYMMDD_HHmmss） */
   root_dir: string;
   /** 拷贝到 .assets/ 的资产文件总数（图片+附件，按物理文件去重） */
   assets_copied: number;

@@ -759,7 +759,7 @@ export function NotesPanel() {
         message.info("已根据最新 md 文件同步笔记内容");
       }
       // Q-003：首次打开外部 .md 弹一次说明，让用户知道"已加入本地库 + 编辑会写回原文件"
-      // 临时编辑不弹：那条说明讲的是"已加入知识库"，与临时模式的预期相反
+      // 临时编辑不弹：那条说明讲的是"已加入笔记库"，与临时模式的预期相反
       if (!result.isScratch) showExternalMdIntroOnce();
       useAppStore.getState().bumpNotesRefresh();
       navigate(`/notes/${result.noteId}`);
