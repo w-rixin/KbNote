@@ -33,7 +33,6 @@ import { StarryBackground } from "@/components/ui/StarryBackground";
 import { createBlankAndOpen } from "@/lib/noteCreator";
 import { targetFromFolderParam } from "@/lib/newNoteTarget";
 import { AttachmentPreviewModal } from "@/components/preview/AttachmentPreviewModal";
-import { syncV1Api } from "@/lib/api";
 
 const { Header, Sider, Content } = Layout;
 
@@ -389,34 +388,9 @@ export function AppLayout() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [quickNoteOpen, setQuickNoteOpen] = useState(false);
 
-  // 启动时静默 pull：让用户从其他设备做的修改自动拉到本地，避免后续编辑产生冲突。
-  // 只主窗（label === 'main'）跑一次：pop-out 子窗共用同一个 DB，没必要重复 pull。
-  // 延迟 3s 让 UI 先就绪；失败用 message.warning 不打断当前页。
-  useEffect(() => {
-    const w = getAppWindow();
-    if (w && w.label !== "main") return;
-    const timer = setTimeout(async () => {
-      try {
-        const backends = await syncV1Api.listBackends();
-        const enabled = backends.filter((b) => b.enabled);
-        const errs: string[] = [];
-        for (const b of enabled) {
-          try {
-            await syncV1Api.pull(b.id);
-          } catch (e) {
-            errs.push(`${b.name}: ${e}`);
-          }
-        }
-        if (errs.length > 0) {
-          message.warning(`启动同步：${errs.length} 个后端拉取失败（${errs.join("；")}）`);
-        }
-      } catch {
-        // backends 列表读不到属于早期初始化阶段问题，静默
-      }
-    }, 3000);
-    return () => clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // 原版此处有一个「启动 3s 后静默 pull 所有同步后端」的定时器。
+  // 同步功能（sync v1）已随删减移除，`syncV1Api.listBackends()` 必然 reject，
+  // 定时器唯一的作用就是每次启动都打一条 console 错误 —— 整块删除。
 
   const themeMenuItems = [
     { type: "group" as const, label: "亮色主题", children: getThemesByCategory("light").map(t => ({
