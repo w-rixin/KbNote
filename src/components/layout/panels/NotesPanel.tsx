@@ -83,8 +83,6 @@ import {
 } from "@/lib/newNoteTarget";
 import {
   createBlankAndOpen,
-  importExcelFlow,
-  importPdfsFlow,
   importTextFlow,
   importWordFlow,
 } from "@/lib/noteCreator";
@@ -1716,29 +1714,11 @@ export function NotesPanel() {
         },
       },
       {
-        key: "import-pdf",
-        icon: <FileTypeIcon type="pdf" size={14} />,
-        label: "导入 PDF…",
-        onClick: () => {
-          void importPdfsFlow(folderId);
-          close();
-        },
-      },
-      {
         key: "import-word",
         icon: <FileTypeIcon type="docx" size={14} />,
         label: "导入 Word…",
         onClick: () => {
           void importWordFlow(folderId);
-          close();
-        },
-      },
-      {
-        key: "import-excel",
-        icon: <FileTypeIcon type="xlsx" size={14} />,
-        label: "导入 Excel / CSV…",
-        onClick: () => {
-          void importExcelFlow(folderId);
           close();
         },
       },

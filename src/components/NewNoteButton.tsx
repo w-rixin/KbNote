@@ -3,14 +3,7 @@ import { Button, Dropdown, Space, message, type MenuProps } from "antd";
 import type { SizeType } from "antd/es/config-provider/SizeContext";
 import { useNavigate } from "react-router-dom";
 import { open as openDialog } from "@tauri-apps/api/dialog";
-import {
-  Plus,
-  ChevronDown,
-  LayoutTemplate,
-  FolderOpen,
-  PenTool,
-  Globe,
-} from "lucide-react";
+import { Plus, ChevronDown, FolderOpen } from "lucide-react";
 
 import { FileTypeIcon } from "./FileTypeIcon";
 import { ImportPreviewModal } from "./ImportPreviewModal";
@@ -20,9 +13,6 @@ import { useAppStore } from "@/store";
 import type { ScannedFile } from "@/types";
 import {
   createBlankAndOpen,
-  createWhiteboardAndOpen,
-  importExcelFlow,
-  importPdfsFlow,
   importTextFlow,
   importWordFlow,
 } from "@/lib/noteCreator";
@@ -67,8 +57,6 @@ export function NewNoteButton({
   size,
 }: Props) {
   const navigate = useNavigate();
-  const [, setTemplateOpen] = useState(false);
-  const [, setClipOpen] = useState(false);
   const [importPreview, setImportPreview] = useState<{
     files: ScannedFile[];
     rootPath: string;
@@ -114,26 +102,10 @@ export function NewNoteButton({
   }
 
   const menuItems: MenuProps["items"] = [
-    {
-      key: "template",
-      label: "从模板…",
-      icon: <LayoutTemplate size={14} />,
-      onClick: () => setTemplateOpen(true),
-    },
-    {
-      key: "whiteboard",
-      label: "新建白板",
-      icon: <PenTool size={14} />,
-      onClick: () => createWhiteboardAndOpen(folderId, navigate),
-    },
-    { type: "divider" },
-    {
-      // 与下面的本地文件导入同属「从外部来源建笔记」，但来源是网页，故排在导入组首位
-      key: "clip-url",
-      label: "剪藏网页…",
-      icon: <Globe size={14} />,
-      onClick: () => setClipOpen(true),
-    },
+    // 只剩"从本地文件建笔记"这一组。
+    // 原版还有 从模板… / 新建白板 / 剪藏网页… / 导入 PDF… / 导入 Excel… 五项，
+    // 它们对应的后端命令（template / whiteboard / clip_url / pdf / excel）
+    // 在 P1b 随模块一起删除，点了只会 command not found，故整项移除。
     {
       key: "import-text",
       label: "导入 Markdown / TXT…",
@@ -149,22 +121,10 @@ export function NewNoteButton({
       },
     },
     {
-      key: "import-pdf",
-      label: "导入 PDF…",
-      icon: <FileTypeIcon type="pdf" size={14} />,
-      onClick: () => importPdfsFlow(folderId, navigate),
-    },
-    {
       key: "import-docx",
       label: "导入 Word…",
       icon: <FileTypeIcon type="docx" size={14} />,
       onClick: () => importWordFlow(folderId, navigate),
-    },
-    {
-      key: "import-excel",
-      label: "导入 Excel / CSV…",
-      icon: <FileTypeIcon type="xlsx" size={14} />,
-      onClick: () => importExcelFlow(folderId, navigate),
     },
   ];
 

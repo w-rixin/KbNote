@@ -2,12 +2,11 @@
  * 笔记创建 / 导入统一入口 —— 从旧 CreateNoteModal 拆出来的公共函数，
  * 让"+ 新建笔记"按钮能直接调用，不必再走 Tab 选择的 Modal 流程。
  */
-import { Button, List, Modal, Typography, message } from "antd";
+import { List, Modal, Typography, message } from "antd";
 import { open as openDialog } from "@tauri-apps/api/dialog";
-import { Copy } from "lucide-react";
 import type { NavigateFunction } from "react-router-dom";
 
-import { noteApi, importApi, pdfApi, excelApi, ocrApi, sourceFileApi, tagApi, folderApi, whiteboardApi } from "./api";
+import { noteApi, importApi, sourceFileApi, tagApi, folderApi } from "./api";
 import { importWordFiles } from "./wordImport";
 import { beginImportJob, beginTrackedImportJob } from "./importJob";
 import { useAppStore } from "@/store";
@@ -132,20 +131,8 @@ export async function createBlankAndOpen(
  * 标签、回收站、同步这些能力；这里刻意**不套用**"默认标签"偏好 ——
  * 那个偏好是给文字笔记设的，硬套到白板上多半不是用户想要的。
  */
-export async function createWhiteboardAndOpen(
-  folderId: number | null,
-  navigate: NavigateFunction,
-): Promise<void> {
-  try {
-    const note = await whiteboardApi.create(undefined, folderId);
-    useAppStore.getState().bumpNotesRefresh();
-    navigate(`/whiteboard/${note.id}`);
-  } catch (e) {
-    message.error(`新建白板失败: ${e}`);
-  }
-}
-
-/** 在文件夹树里按 id 找名字（深度优先） */
+/// 在文件夹树里按 id 找名字（用于"已归入默认文件夹 X"之类的提示文案）。
+/// 原版定义在 createWhiteboardAndOpen 附近，随白板 flow 一起被误删过。
 function findFolderName(
   folders: { id: number; name: string; children?: typeof folders }[],
   id: number,
@@ -160,13 +147,6 @@ function findFolderName(
   return null;
 }
 
-/**
- * 文本笔记导入流程（同质合并版）：md / markdown / txt 共用一条通路。
- *
- * 后端 `import_selected_files` 已能识别这三种扩展名，并自动嗅探编码
- * （UTF-8 / GBK / GB18030 / Big5 等老 .txt 也能正确读出中文）。
- * 用户可一次混选不同扩展名的文件批量导入。
- */
 export async function importTextFlow(
   folderId: number | null,
   navigate?: NavigateFunction,
@@ -233,188 +213,6 @@ export async function importTextFlow(
 }
 
 /** PDF 导入流程 */
-export async function importPdfsFlow(
-  folderId: number | null,
-  navigate?: NavigateFunction,
-): Promise<void> {
-  const picked = await openDialog({
-    multiple: true,
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
-  if (!picked) return;
-  const paths = Array.isArray(picked) ? picked : [picked];
-  if (paths.length === 0) return;
-  const job = await beginTrackedImportJob("PDF", paths.length, "pdf:import-progress");
-  try {
-    // 第一遍：不 OCR（快，多数 PDF 有文字层）
-    const results = await pdfApi.importPdfs(paths, folderId, false);
-    const okIds: number[] = [];
-    for (const r of results) if (r.noteId != null) okIds.push(r.noteId);
-    const fail = results.filter((r) => r.noteId === null);
-    job.finish(okIds.length, fail.length);
-    // 扫描件失败项：错误里带「扫描件」标记，可用本地 OCR 重试
-    const scanned = fail.filter((r) => (r.error ?? "").includes("扫描件"));
-
-    if (okIds.length > 0) message.success(`成功导入 ${okIds.length} 个 PDF`);
-
-    // 有扫描件 且 本地 OCR 引擎可用 → 问用户是否 OCR 重试
-    const ocrReady = await ocrApi.available().catch(() => false);
-    if (scanned.length > 0 && ocrReady) {
-      Modal.confirm({
-        title: `${scanned.length} 个是扫描件（无文字层）`,
-        content: `是否用内置本地 OCR 逐页识别后导入？OCR 较慢（每页约 0.1–1 秒），请耐心等待。`,
-        okText: "用 OCR 识别导入",
-        cancelText: "跳过这些",
-        onOk: async () => {
-          // OCR 重试是**独立第二条**任务：第一轮那条已经收尾消失了，
-          // 而 OCR 逐页推理更慢（每页 0.1–1 秒），恰恰更需要看得见进度。
-          const ocrJob = await beginTrackedImportJob(
-            "OCR 识别",
-            scanned.length,
-            "pdf:import-progress",
-          );
-          try {
-            const r2 = await pdfApi.importPdfs(
-              scanned.map((r) => r.sourcePath),
-              folderId,
-              true,
-            );
-            const ocrOk = r2.filter((r) => r.noteId != null);
-            const ocrFail = r2.filter((r) => r.noteId === null);
-            ocrJob.finish(ocrOk.length, ocrFail.length);
-            if (ocrOk.length > 0)
-              message.success(`OCR 成功导入 ${ocrOk.length} 个扫描件`);
-            if (ocrFail.length > 0) showImportFailModal(ocrFail, "OCR 后仍失败");
-            useAppStore.getState().bumpNotesRefresh();
-            const ocrIds = ocrOk
-              .map((r) => r.noteId)
-              .filter((v): v is number => v != null);
-            navigateAfterImport(navigate, [...okIds, ...ocrIds], []);
-          } catch (e) {
-            ocrJob.cancel();
-            message.error(`OCR 导入失败: ${e}`);
-          }
-        },
-      });
-    } else if (fail.length > 0) {
-      // 无扫描件可 OCR，或引擎不可用 → 直接列失败清单
-      showImportFailModal(fail, `${fail.length} 个 PDF 导入失败`);
-    }
-
-    useAppStore.getState().bumpNotesRefresh();
-    navigateAfterImport(navigate, okIds, []);
-  } catch (e) {
-    job.cancel();
-    message.error(`导入失败: ${e}`);
-  }
-}
-
-/**
- * 批量导入的失败清单弹窗 —— PDF / Word 共用。
- *
- * 两者的失败结构本来就一样（`sourcePath` + `error`），弹窗内容也一样；
- * 各写一份意味着这套逻辑要维护两遍，加第三种格式时还会再抄一遍。
- *
- * 带「复制清单」是因为**这个弹窗就是唯一的记录**：一次导几十个挂七八个，
- * 关掉就得靠脑子记是哪几个、为什么挂。PDF 的失败原因基本都要求你
- * 去应用外先处理（知网件重新打印另存 / 解密 / 装转换器），复制出来
- * 贴到笔记或待办里慢慢弄，比在应用里再养一个待办队列实在。
- */
-function showImportFailModal(
-  fail: { sourcePath: string; error?: string | null }[],
-  title: string,
-): void {
-  const plain = fail
-    .map((r) => `${r.sourcePath}\n    ${r.error ?? "未知原因"}`)
-    .join("\n");
-
-  Modal.warning({
-    title,
-    width: 560,
-    content: (
-      <>
-        <List
-          size="small"
-          dataSource={fail}
-          renderItem={(r) => (
-            <List.Item>
-              <Typography.Text type="danger" style={{ fontSize: 12 }}>
-                {r.sourcePath.split(/[\/]/).pop()}: {r.error}
-              </Typography.Text>
-            </List.Item>
-          )}
-        />
-        <Button
-          size="small"
-          icon={<Copy size={13} />}
-          onClick={() => {
-            // 非安全上下文下 navigator.clipboard 可能整体缺失，判空避免 TypeError
-            void navigator.clipboard
-              ?.writeText(plain)
-              .then(() => message.success("失败清单已复制"))
-              .catch(() => message.error("复制失败，请手动选取"));
-          }}
-        >
-          复制清单（含完整路径与原因）
-        </Button>
-      </>
-    ),
-  });
-}
-
-/**
- * Excel / ODS / CSV 导入流程（仅桌面端）：一个文件一篇笔记，每个工作表一张表。
- *
- * 行数很多的工作表正文只放前部分行（后端限行并在正文里写明总行数），
- * 完整数据留在源文件里，编辑器顶部的「XLSX」按钮可一键打开。
- */
-export async function importExcelFlow(
-  folderId: number | null,
-  navigate?: NavigateFunction,
-): Promise<void> {
-  const picked = await openDialog({
-    multiple: true,
-    filters: [
-      {
-        name: "Excel / 表格",
-        extensions: ["xlsx", "xls", "xlsm", "xlsb", "ods", "csv", "tsv"],
-      },
-    ],
-  });
-  if (!picked) return;
-  const paths = Array.isArray(picked) ? picked : [picked];
-  if (paths.length === 0) return;
-  const job = await beginTrackedImportJob("Excel", paths.length, "excel:import-progress");
-  try {
-    const results = await excelApi.importFiles(paths, folderId);
-    const ok = results.filter((r) => r.noteId !== null);
-    const fail = results.filter((r) => r.noteId === null);
-    job.finish(ok.length, fail.length);
-
-    if (ok.length > 0) message.success(`成功导入 ${ok.length} 个表格文件`);
-    const truncated = ok.filter((r) => r.truncatedSheets.length > 0);
-    if (truncated.length > 0) {
-      message.warning(
-        truncated.length === 1
-          ? `「${truncated[0].title}」的 ${truncated[0].truncatedSheets.join("、")} 行数较多，正文只放了前部分行，完整数据请用编辑器顶部的源文件按钮打开`
-          : `${truncated.length} 个文件有工作表因行数较多被截断，正文只放了前部分行，完整数据请用编辑器顶部的源文件按钮打开`,
-        6,
-      );
-    }
-    if (fail.length > 0) {
-      showImportFailModal(fail, `${fail.length} 个表格文件导入失败`);
-    }
-
-    useAppStore.getState().bumpNotesRefresh();
-    const ids = ok.map((r) => r.noteId).filter((v): v is number => v != null);
-    navigateAfterImport(navigate, ids, []);
-  } catch (e) {
-    job.cancel();
-    message.error(`导入失败: ${e}`);
-  }
-}
-
-/** Word 导入流程：.doc 需本机装 LibreOffice / Office / WPS */
 export async function importWordFlow(
   folderId: number | null,
   navigate?: NavigateFunction,
