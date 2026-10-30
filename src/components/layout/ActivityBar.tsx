@@ -1,7 +1,6 @@
-import { cloneElement, isValidElement, startTransition, useEffect, useMemo, useState } from "react";
+import { cloneElement, isValidElement, startTransition, useEffect, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Tooltip, Badge, theme as antdTheme, message } from "antd";
-import { hiddenPinApi } from "@/lib/api";
+import { Tooltip, Badge, theme as antdTheme } from "antd";
 import {
   Home,
   NotebookText,
@@ -9,11 +8,6 @@ import {
   Calendar,
   Tags,
   CheckSquare,
-  Layers,
-  GitBranch,
-  Bot,
-  Sparkles,
-  BellRing,
   Trash2,
   Info,
   EyeOff,
@@ -67,10 +61,16 @@ interface ActivityItem {
  * 主视图按"用户意图"分四组，组与组之间渲染分隔线：
  *   1. 概览：首页（每次启动看一眼）
  *   2. 创作 / 工作流：笔记 / 每日笔记 / 待办（日常高频写入）
- *   3. 检索 / 发现：搜索 / 标签 / 知识图谱（找东西）
- *   4. AI 辅助：AI 问答 / 提示词（创作助手）
+ *   3. 检索 / 发现：搜索 / 标签（找东西）
  *
  * 分组而非平铺的好处：用户扫一眼就能锁定意图所在区，比按使用频率排更省认知。
+ *
+ * 🔴 这里只列「真的有页面、且后端命令在册」的视图。
+ *    原版还有 卡片复习 / 知识图谱 / AI 问答 / 提示词 / 定时推送 五项，
+ *    对应页面与后端命令在删减时已移除，但它们**仍会出现在侧栏**
+ *    （其中知识图谱 / AI 问答 / 提示词 / 定时推送 默认启用），
+ *    点进去是空路由 —— 这是用户最容易撞见的一类坏入口，故整项删除。
+ *    以后新增视图时，务必同时确认 Router 里有对应 route。
  */
 const MAIN_GROUPS: ActivityItem[][] = [
   // 概览
@@ -80,19 +80,11 @@ const MAIN_GROUPS: ActivityItem[][] = [
     { view: "notes", route: "/notes", label: "笔记", icon: <NotebookText size={20} />, core: true },
     { view: "daily", route: "/daily", label: "日记", icon: <Calendar size={20} /> },
     { view: "tasks", route: "/tasks", label: "待办", icon: <CheckSquare size={20} /> },
-    { view: "cards", route: "/cards", label: "卡片复习", icon: <Layers size={20} /> },
   ],
   // 检索 / 发现
   [
     { view: "search", route: "/search", label: "搜索", icon: <Search size={20} />, core: true },
     { view: "tags", route: "/tags", label: "标签", icon: <Tags size={20} /> },
-    { view: "graph", route: "/graph", label: "知识图谱", icon: <GitBranch size={20} /> },
-  ],
-  // AI 辅助
-  [
-    { view: "ai", route: "/ai", label: "AI 问答", icon: <Bot size={20} /> },
-    { view: "prompts", route: "/prompts", label: "提示词", icon: <Sparkles size={20} /> },
-    { view: "push", route: "/push", label: "定时推送", icon: <BellRing size={20} /> },
   ],
 ];
 
@@ -142,12 +134,10 @@ export function ActivityBar() {
   const toggleSidePanel = useAppStore((s) => s.toggleSidePanel);
   const urgentTodoCount = useAppStore((s) => s.urgentTodoCount);
   const refreshTaskStats = useAppStore((s) => s.refreshTaskStats);
-  const isHiddenUnlocked = useAppStore((s) => s.isHiddenUnlocked);
   const enabledViews = useAppStore((s) => s.enabledViews);
   const appLockEnabled = useAppStore((s) => s.appLockEnabled);
   const lockAppNow = useAppStore((s) => s.lockAppNow);
   const showLabels = useAppStore((s) => s.activityBarShowLabels);
-  const [, setUnlockOpen] = useState(false);
 
   /** 是否显示某项：核心永远显示；可选项看用户是否在设置里启用 */
   const isVisible = (item: ActivityItem) =>
@@ -190,24 +180,9 @@ export function ActivityBar() {
       return;
     }
 
-    // 隐藏笔记 PIN 拦截：已设过 PIN 且会话未解锁 → 弹解锁框
-    if (item.view === "hidden" && !isHiddenUnlocked()) {
-      void (async () => {
-        try {
-          if (await hiddenPinApi.isSet()) {
-            setUnlockOpen(true);
-            return;
-          }
-          navigateToView(item);
-        } catch (e) {
-          // 后端故障时不锁死入口
-          console.warn("[hidden-pin] isSet 查询失败:", e);
-          message.warning("PIN 状态查询失败，已跳过验证");
-          navigateToView(item);
-        }
-      })();
-      return;
-    }
+    // 原版这里有一层「隐藏笔记 PIN」拦截（hiddenPinApi.isSet → 弹解锁框）。
+    // hidden_pin 服务已随删减移除，该命令必然失败，只会多弹一条
+    // 「PIN 状态查询失败」的 toast。PIN 保护本身已不存在，直接进视图。
 
     navigateToView(item);
   }
