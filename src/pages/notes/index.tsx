@@ -53,7 +53,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import type { ColumnsType } from "antd/es/table";
 import { open as openDialog, save } from "@tauri-apps/api/dialog";
 import { revealItemInDir } from "@/lib/tauriShell";
-import { noteApi, exportApi, folderApi, tagApi, trashApi, vaultApi } from "@/lib/api";
+import { noteApi, exportApi, folderApi, tagApi, trashApi } from "@/lib/api";
 import { MicButton } from "@/components/MicButton";
 import { useContextMenu } from "@/hooks/useContextMenu";
 import {
@@ -1172,13 +1172,12 @@ function DesktopNoteListPage() {
     [data.page, loadNotes],
   );
 
-  // 复制笔记正文（Markdown）到剪贴板。加密笔记的 content 字段是占位符，
-  // 需走 decryptNote 读出明文（不落盘）；vault 锁定时该调用会报错，统一兜底提示。
+  // 复制笔记正文（Markdown）到剪贴板。
+  // （原版对加密笔记要走 decryptNote 取明文；加密功能已随 vault 一起删除，
+  //   这里直接读 content —— is_encrypted 字段保留，但永远为 false。）
   const handleCopyContent = useCallback(async (note: Note) => {
     try {
-      const text = note.is_encrypted
-        ? await vaultApi.decryptNote(note.id)
-        : note.content;
+      const text = note.content;
       if (!text || !text.trim()) {
         message.warning("笔记内容为空");
         return;

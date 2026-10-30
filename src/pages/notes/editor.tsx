@@ -25,12 +25,12 @@ import {
   App as AntdApp,
   theme as antdTheme,
 } from "antd";
-import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, FileText as FileTextIcon, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, Lock, Unlock, ListTree, BookOpen, FilePen, Printer, Code2, History } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, FileText as FileTextIcon, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, ListTree, BookOpen, FilePen, Printer, Code2, History } from "lucide-react";
 import { CloseCircleFilled } from "@ant-design/icons";
 import { useAppStore, EDITOR_FONT_DEFAULTS } from "@/store";
 import { useCtrlWheelZoom } from "@/hooks/useCtrlWheelZoom";
 import { useTabsStore } from "@/store/tabs";
-import { noteApi, tagApi, folderApi, linkApi, exportApi, sourceFileApi, vaultApi, sourceWritebackApi } from "@/lib/api";
+import { noteApi, tagApi, folderApi, linkApi, exportApi, sourceFileApi, sourceWritebackApi } from "@/lib/api";
 import { printHtmlAsPdf } from "@/lib/exportPdf";
 import {
   printEditorContent,
@@ -50,7 +50,6 @@ import { EditorOutline } from "@/components/editor/EditorOutline";
 import { EditorStats } from "@/components/editor/EditorStats";
 import { TagColorPicker } from "@/components/TagColorPicker";
 import { MicButton } from "@/components/MicButton";
-import { MindMapView } from "@/components/notes/MindMapView";
 import type { Note, Tag, Folder, NoteLink } from "@/types";
 import { accelToKeys, findShortcut } from "@/lib/shortcuts/registry";
 
@@ -778,7 +777,7 @@ function DesktopNoteEditorPage() {
    * 保存（含写回外部 .md）走的是同一条 handleSave。
    *
    * 偏好跨笔记记忆：用 localStorage 而非 store，避免为一个编辑器局部开关
-   * 污染全局 store（与 mindMapWidth / outlineWidth 同策略）。
+   * 污染全局 store（与 outlineWidth 同策略）。
    */
   const [sourceMode, setSourceMode] = useState<boolean>(
     () => localStorage.getItem("editor.sourceMode") === "1",
@@ -792,16 +791,6 @@ function DesktopNoteEditorPage() {
   const [dirty, setDirty] = useState(false);
   /** 历史版本抽屉 */
   const [historyOpen, setHistoryOpen] = useState(false);
-  /** 思维导图视图：在编辑器右侧以 flex 分栏方式渲染（不是浮层） */
-  const [mindMapOpen, setMindMapOpen] = useState(false);
-  /** 思维导图分栏宽度（像素，持久化到 localStorage 跨笔记记忆） */
-  const [mindMapWidth, setMindMapWidth] = useState<number>(() => {
-    const saved = Number(localStorage.getItem("editor.mindMapWidth"));
-    return Number.isFinite(saved) && saved >= 320 ? saved : 480;
-  });
-  // latest 字段：handleMove 写入最新宽度，handleUp 关闭时读出落库（避免闭包陷阱）
-  const splitterDragRef = useRef<{ startX: number; startWidth: number; latest: number } | null>(null);
-
   /** 右侧大纲宽度（像素，持久化到 localStorage；双击分隔条还原到默认）。
    *  220：170 时长标题几乎条条被省略号截断；正文列宽固定（默认 820）撑不满轨道，
    *  多出来的空白与其夹在正文和大纲中间当死区，不如让大纲多显示一截标题。
@@ -931,13 +920,9 @@ function DesktopNoteEditorPage() {
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<number | null>(null);
   /** 自动保存触发的"保存中"瞬时标记（区别于手动保存的 saving，只用于顶部提示文案） */
   const [autoSaving, setAutoSaving] = useState(false);
-  /**
-   * 思维导图打开时自动暂时隐藏大纲——三栏（编辑器+大纲+导图）会挤压编辑可读宽度。
-   * 不动用户在 store 里的偏好；mindMapOpen 切回 false 后大纲自动恢复。
-   */
   // 源码模式下不渲染 TiptapEditor，editorInstance 停留在切换前的旧文档上：
-  // 大纲会显示过时的标题、点了还跳不动。直接连同思维导图一起排除掉。
-  const effectiveOutlineVisible = outlineVisible && !mindMapOpen && !sourceMode;
+  // 大纲会显示过时的标题、点了还跳不动，直接排除掉。
+  const effectiveOutlineVisible = outlineVisible && !sourceMode;
 
   // 同名消歧 Modal 状态
   const [disambigOpen, setDisambigOpen] = useState(false);
@@ -1620,63 +1605,6 @@ function DesktopNoteEditorPage() {
     }
   }
 
-  /**
-   * T-007: 切换笔记加密态。
-   *
-   * 前置：vault 必须已解锁。未解锁时弹 unlock/setup Modal，解锁后用户需再点一次本按钮。
-   *
-   * 加密时：读当前 content → 后端调 vault 加密 → content 变成 "🔒 已加密..." 占位；
-   * 取消加密时：后端解密得到原文并写回 content。
-   * 加密/取消后都重新 loadNote() 拿最新态。
-   */
-  const [, setVaultModal] = useState<{
-    open: boolean;
-    mode: "setup" | "unlock";
-  }>({ open: false, mode: "unlock" });
-
-  async function handleToggleEncrypt() {
-    if (!note) return;
-    // 先确认 vault 状态
-    let vs;
-    try {
-      vs = await vaultApi.status();
-    } catch (e) {
-      message.error(`读取 vault 状态失败：${e}`);
-      return;
-    }
-    if (vs === "notset") {
-      // 首次设置
-      setVaultModal({ open: true, mode: "setup" });
-      message.info("请先设置主密码，然后再点加密");
-      return;
-    }
-    if (vs === "locked") {
-      setVaultModal({ open: true, mode: "unlock" });
-      message.info("请先解锁保险库，然后再点加密");
-      return;
-    }
-    // unlocked
-    try {
-      if (note.is_encrypted) {
-        await vaultApi.disableEncrypt(noteId);
-        message.success("已取消加密");
-      } else {
-        // 先把当前编辑器未保存的 content 落库，否则 encrypt_note 读到的是老内容
-        if (dirty) await handleSave(true);
-        await vaultApi.encryptNote(noteId);
-        message.success("已加密（主界面将显示占位文本）");
-      }
-      // 重新拉笔记以拿到最新 is_encrypted / content 占位符
-      const fresh = await noteApi.get(noteId);
-      setNote(fresh);
-      setContent(fresh.content);
-      setTitle(fresh.title);
-      setDirty(false);
-    } catch (e) {
-      message.error(String(e));
-    }
-  }
-
   /** Ctrl/Cmd + 点击 wiki 链接时跳转到对应笔记
    *
    * - `wikiId` 传入时（`[[标题|ID]]` 锚点形式）→ 直接按 ID 跳，跳过所有标题查找逻辑。
@@ -2305,33 +2233,11 @@ function DesktopNoteEditorPage() {
               onClick={handleToggleHidden}
             />
           </Tooltip>
-          <Tooltip
-            title={
-              note?.is_encrypted
-                ? "取消加密（恢复为普通笔记）"
-                : "加密此笔记（需先设置并解锁主密码）"
-            }
-          >
-            <Button
-              type={note?.is_encrypted ? "primary" : "default"}
-              icon={note?.is_encrypted ? <Lock size={16} /> : <Unlock size={16} />}
-              onClick={handleToggleEncrypt}
-            />
-          </Tooltip>
-          <Tooltip
-            title={
-              mindMapOpen
-                ? "思维导图打开期间大纲已暂时隐藏（关闭导图后恢复）"
-                : outlineVisible
-                  ? "隐藏大纲"
-                  : "显示大纲"
-            }
-          >
+          <Tooltip title={outlineVisible ? "隐藏大纲" : "显示大纲"}>
             <Button
               type={effectiveOutlineVisible ? "primary" : "default"}
               icon={<ListTree size={16} />}
               onClick={toggleOutline}
-              disabled={mindMapOpen}
             />
           </Tooltip>
           {/* 原先这里有个 Link2 徽标按钮，作用只是「滚动到正文底部的反链面板」——
@@ -2521,7 +2427,7 @@ function DesktopNoteEditorPage() {
         </Space>
       </div>
 
-      {/* 编辑器 + 思维导图 横向分栏容器（mindMapOpen=true 时变两栏，否则编辑器独占） */}
+      {/* 编辑器 + 大纲 横向分栏容器 */}
       <div
         style={{
           flex: 1,
@@ -2766,71 +2672,6 @@ function DesktopNoteEditorPage() {
         )}
       </div>
 
-      {/* 思维导图分栏拖拽手柄：6px 宽，col-resize；onMouseDown 进入拖拽态，
-          全局 mousemove 调宽度，mouseup 解绑并落库 */}
-      {mindMapOpen && (
-        <div
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="拖动调整思维导图宽度"
-          onMouseDown={(e) => {
-            e.preventDefault();
-            splitterDragRef.current = {
-              startX: e.clientX,
-              startWidth: mindMapWidth,
-              latest: mindMapWidth,
-            };
-            const handleMove = (ev: MouseEvent) => {
-              const ref = splitterDragRef.current;
-              if (!ref) return;
-              // 向左拖 → 导图变宽（鼠标 X 减小）；反之变窄
-              const delta = ref.startX - ev.clientX;
-              const next = Math.max(320, Math.min(1200, ref.startWidth + delta));
-              ref.latest = next;
-              setMindMapWidth(next);
-            };
-            const handleUp = () => {
-              window.removeEventListener("mousemove", handleMove);
-              window.removeEventListener("mouseup", handleUp);
-              const ref = splitterDragRef.current;
-              if (ref) {
-                localStorage.setItem("editor.mindMapWidth", String(ref.latest));
-                splitterDragRef.current = null;
-              }
-            };
-            window.addEventListener("mousemove", handleMove);
-            window.addEventListener("mouseup", handleUp);
-          }}
-          style={{
-            width: 6,
-            cursor: "col-resize",
-            background: "transparent",
-            flexShrink: 0,
-          }}
-          className="hover:bg-blue-500/30 active:bg-blue-500/50 transition-colors"
-        />
-      )}
-
-      {/* 思维导图分栏：仅 mindMapOpen 时挂载 */}
-      {mindMapOpen && (
-        <div
-          style={{
-            width: mindMapWidth,
-            flexShrink: 0,
-            minWidth: 320,
-            height: "100%",
-          }}
-        >
-          <MindMapView
-            open={mindMapOpen}
-            onClose={() => setMindMapOpen(false)}
-            markdown={content}
-            title={title}
-            noteId={Number.isFinite(noteId) ? noteId : null}
-            variant="embed"
-          />
-        </div>
-      )}
       </div>
 
       {/* 链接状态条：常驻页面底部，不随正文滚动。

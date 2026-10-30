@@ -1048,6 +1048,14 @@ pub fn run() {
             commands::config::set_config,
             commands::config::delete_config,
             // 待办提醒自定义提示音（音频文件导入 / 列举 / 解析 / 删除）
+            // 笔记双链（[[标题]]）：数据层 database/links.rs 一直完整保留，
+            // P1b 只删了命令层，导致 wiki 链接补全/跳转/链接状态条全部失效。
+            commands::links::sync_note_links,
+            commands::links::get_backlinks,
+            commands::links::get_note_link_summary,
+            commands::links::rebuild_note_links,
+            commands::links::search_link_targets,
+            commands::links::find_note_id_by_title_loose,
             // 笔记模块
             commands::notes::create_note,
             commands::notes::update_note,

@@ -10,6 +10,7 @@ pub mod export;
 pub mod folders;
 pub mod image;
 pub mod import;
+pub mod links;
 pub mod notes;
 pub mod search;
 pub mod shortcut;
