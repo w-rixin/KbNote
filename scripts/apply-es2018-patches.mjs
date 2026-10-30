@@ -107,18 +107,6 @@ const RULES = [
     ],
   },
   {
-    pkg: 'mdast-util-gfm-autolink-literal',
-    version: '2.0.1',
-    file: 'lib/index.js',
-    subs: [
-      [
-        '/(?<=^|\\s|\\p{P}|\\p{S})([-.\\w+]+)@([-\\w]+(?:\\.[-\\w]+)+)/gu',
-        '/([-.\\w+]+)@([-\\w]+(?:\\.[-\\w]+)+)/gu',
-        'email autolink：lookbehind 边界判定改由 findEmail 的 previous() 手工完成（原函数已实现等效逻辑）',
-      ],
-    ],
-  },
-  {
     pkg: 'marked',
     version: '16.4.2',
     file: 'lib/marked.esm.js',
@@ -210,8 +198,19 @@ const failures = []
 for (const rule of RULES) {
   const pkgDir = resolvePkgDir(rule.pkg, rule.version)
   if (!pkgDir) {
-    failures.push(
-      `[${rule.pkg}@${rule.version}] 在 node_modules 中找不到包目录（版本可能已变更，需重新生成补丁规则）`,
+    // 包不在依赖树里 = 用不到它 = 不需要打补丁，属正常情况，**不能算失败**。
+    //
+    // 🔴 这条曾经把 CI 弄红（KbNote 精简依赖那次）：删掉 remark-gfm 后，
+    //    它的传递依赖 mdast-util-gfm-autolink-literal 从树里消失，本脚本却判成
+    //    "找不到包目录" → exit 1 → pnpm install 失败 → 整个前端检查挂掉。
+    //    而本机因为 node_modules 里还留着旧包（pnpm 未清理孤立包），跑出来是
+    //    "幂等跳过、0 失败"，于是完全看不出问题 —— 只有 CI 的全新安装会暴露。
+    //    结论：依赖裁剪是常态，这里必须容错。
+    //    注意区分：包在、但目标文件不在（下一条分支）仍然算失败 —— 那才是
+    //    版本真的变了、补丁规则需要重新生成。
+    totalSkipped++
+    console.log(
+      `  - ${rule.pkg}@${rule.version}: 不在依赖树中，跳过（若该依赖被重新引入，请重新生成补丁规则）`,
     )
     continue
   }
