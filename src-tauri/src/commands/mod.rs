@@ -4,6 +4,7 @@
 
 pub mod attachment;
 pub mod config;
+pub mod converter;
 pub mod daily;
 pub mod data_dir;
 pub mod export;

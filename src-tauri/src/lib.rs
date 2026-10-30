@@ -1056,6 +1056,13 @@ pub fn run() {
             commands::links::rebuild_note_links,
             commands::links::search_link_targets,
             commands::links::find_note_id_by_title_loose,
+            // 文档转换器（Word 导入 / .docx 附件预览）：services/converter.rs 完整保留，
+            // 同样只缺命令层。依赖已删 source_files 表的 attach_source_file /
+            // get_source_file_absolute_path 不在此列（那个功能本身被砍）。
+            commands::converter::get_converter_status,
+            commands::converter::diagnose_doc_converter,
+            commands::converter::convert_doc_to_docx_base64,
+            commands::converter::read_file_as_base64,
             // 笔记模块
             commands::notes::create_note,
             commands::notes::update_note,

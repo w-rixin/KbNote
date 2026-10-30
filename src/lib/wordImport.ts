@@ -105,11 +105,8 @@ export async function importWordFile(
       content: placeholder,
       folder_id: folderId,
     });
-    try {
-      await sourceFileApi.attach(note.id, filePath, "doc");
-    } catch (e) {
-      warnings.push(`原文件保存失败: ${e}`);
-    }
+    // 原版这里会 sourceFileApi.attach 把 .doc 原文件挂到笔记上。该能力依赖
+    // 已删除的 source_files 表，现在不再保存原件副本（正文已解析出来，不受影响）。
     const fresh = await noteApi.get(note.id);
     return { note: fresh, warnings };
   }
@@ -144,18 +141,11 @@ export async function importWordFile(
     });
   }
 
-  // 5. 挂上原文件（保留原 .doc/.docx）
-  try {
-    await sourceFileApi.attach(
-      note.id,
-      filePath,
-      isDoc ? "doc" : "docx",
-    );
-  } catch (e) {
-    warnings.push(`原文件保存失败: ${e}`);
-  }
+  // 5. 原版在此把原 .doc/.docx 挂到笔记上（sourceFileApi.attach）。该能力依赖
+  //    已删除的 source_files 表，现在不再保留原件副本 —— 正文与图片已落库，
+  //    只是失去了"回看/定位原始 Word 文件"的入口。
 
-  // 6. 重新拿一次 note（带 source_file_path/type）
+  // 6. 重新拿一次 note
   const fresh = await noteApi.get(note.id);
   return { note: fresh, warnings };
 }

@@ -53,7 +53,6 @@ import type {
   ScannedFile,
   ExportResult,
   SingleExportResult,
-  WriteBackResult,
   NoteTemplate,
   NoteTemplateInput,
   DailyWritingStat,
@@ -245,16 +244,9 @@ export const sourceFileApi = {
   /** 把任意路径的文件读为 base64（路径来自 dialog） */
   readFileAsBase64: (path: string) =>
     invoke<string>("read_file_as_base64", { path }),
-  /** 把源文件挂到笔记上（拷贝原文件 + 更新 source_file_path/type） */
-  attach: (noteId: number, sourcePath: string, fileType: string) =>
-    invoke<string>("attach_source_file", {
-      noteId,
-      sourcePath,
-      fileType,
-    }),
-  /** 通用：获取笔记关联源文件的绝对路径 */
-  getAbsolutePath: (noteId: number) =>
-    invoke<string | null>("get_source_file_absolute_path", { noteId }),
+  // 原版还有 attach（把源文件挂到笔记上）与 getAbsolutePath（取关联源文件路径）。
+  // 二者依赖 source_files 表与 source_file 服务，P1b 已整体删除，属于
+  // "笔记关联一个外部源文件"这个功能本身被砍掉，不是命令层遗漏，故一并移除。
 };
 
 /** 配置管理 API */
@@ -988,19 +980,6 @@ export const orphanAssetApi = {
 };
 
 /** 外部 .md 双向同步 API（保存即写回原文件） */
-export const sourceWritebackApi = {
-  /** 把笔记当前内容写回原 .md 文件。
-   *
-   *  - `force=false`（默认）：mtime 不一致会返回 `kind: "conflict"`，前端据此弹冲突 Modal
-   *  - `force=true`：忽略冲突强制覆盖（冲突 Modal 选"覆盖外部"后调用） */
-  writeBack: (noteId: number, force = false) =>
-    invoke<WriteBackResult>("write_back_source_md", { noteId, force }),
-  /** 解除笔记与外部 .md 的双向同步关联（原文件丢失或用户主动断开）。
-   *  调用后该笔记降级为纯本地笔记，保存不再触发写回 / 不再弹同步提示。 */
-  clearLink: (noteId: number) =>
-    invoke<void>("clear_source_md_link", { noteId }),
-};
-
 /** 一条本地资源 URL 的解析结果（resolveAssetDataUrls 返回） */
 export interface ResolvedAssetUrl {
   /** 原样回传的请求 URL，据此回填对应 DOM 元素 */

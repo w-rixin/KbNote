@@ -25,12 +25,12 @@ import {
   App as AntdApp,
   theme as antdTheme,
 } from "antd";
-import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, FileText as FileTextIcon, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, ListTree, BookOpen, FilePen, Printer, Code2, History } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Pin, FolderOpen, Tags, Link2, Share, Maximize2, Minimize2, ChevronRight, ChevronDown, CornerUpLeft, Folder as FolderIcon, Eye, EyeOff, ListTree, BookOpen, FilePen, Printer, Code2, History } from "lucide-react";
 import { CloseCircleFilled } from "@ant-design/icons";
 import { useAppStore, EDITOR_FONT_DEFAULTS } from "@/store";
 import { useCtrlWheelZoom } from "@/hooks/useCtrlWheelZoom";
 import { useTabsStore } from "@/store/tabs";
-import { noteApi, tagApi, folderApi, linkApi, exportApi, sourceFileApi, sourceWritebackApi } from "@/lib/api";
+import { noteApi, tagApi, folderApi, linkApi, exportApi } from "@/lib/api";
 import { printHtmlAsPdf } from "@/lib/exportPdf";
 import {
   printEditorContent,
@@ -38,8 +38,7 @@ import {
   editorDomToSelfContainedHtml,
 } from "@/lib/printNote";
 import { open as openDialog, save } from "@tauri-apps/api/dialog";
-import { convertFileSrc } from "@tauri-apps/api/tauri";
-import { open, revealItemInDir } from "@/lib/tauriShell";
+import { revealItemInDir } from "@/lib/tauriShell";
 import { getCurrentWindow } from "@/lib/tauriWindow";
 import { listen } from "@tauri-apps/api/event";
 import { relativeTime, stripHtml } from "@/lib/utils";
@@ -934,14 +933,6 @@ function DesktopNoteEditorPage() {
   // 选段触发（方案 C）：携带的选中文本，抽屉里展示为引用 chip 而不是塞输入框
   const [, setAiSelection] = useState<string | undefined>(undefined);
 
-  // PDF 预览 Modal 状态
-  const [pdfPreviewOpen, setPdfPreviewOpen] = useState(false);
-  const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string>("");
-  /** PDF 原文件绝对路径（供 Modal 里"用系统应用打开"兜底按钮调 openPath） */
-  const [pdfPreviewAbsPath, setPdfPreviewAbsPath] = useState<string>("");
-  /** PDF 预览 Modal 是否最大化（全屏铺满） */
-  const [pdfPreviewMaximized, setPdfPreviewMaximized] = useState(false);
-
   const noteId = Number(id);
 
   // 切到不同笔记时重置阅读模式为全局默认（避免上一篇手动切换的状态残留到下一篇）
@@ -1321,73 +1312,6 @@ function DesktopNoteEditorPage() {
         message.success("保存成功");
       }
 
-      // 外部 .md 双向同步：若该笔记是从 .md 文件打开来的，把当前内容写回原文件
-      if (updated.source_file_type === "md" && updated.source_file_path) {
-        try {
-          const r = await sourceWritebackApi.writeBack(noteId, false);
-          if (r.kind === "conflict") {
-            // 弹 Modal 让用户选；选"覆盖外部"再调一次 force=true
-            Modal.confirm({
-              title: "原文件被外部改过",
-              content: (
-                <div>
-                  <p style={{ marginBottom: 4 }}>检测到原文件在本应用之外被修改：</p>
-                  <p style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
-                    {r.file_path}
-                  </p>
-                  <p style={{ marginTop: 8 }}>选择"覆盖外部"会用本应用里的内容覆盖磁盘文件；选"取消"则保留外部修改，本应用的修改仅停留在数据库里。</p>
-                </div>
-              ),
-              okText: "覆盖外部",
-              okButtonProps: { danger: true },
-              cancelText: "取消",
-              onOk: async () => {
-                try {
-                  await sourceWritebackApi.writeBack(noteId, true);
-                  message.success("已覆盖原文件");
-                } catch (err) {
-                  message.error(`写回失败: ${err}`);
-                }
-              },
-            });
-          } else if (r.kind === "missing") {
-            // 原文件丢失/移走/网盘断开 — 给用户两个选择，避免每次保存都弹同样的提示
-            Modal.confirm({
-              title: "外部 .md 原文件已不可访问",
-              content: (
-                <div>
-                  <p style={{ marginBottom: 4 }}>找不到原文件：</p>
-                  <p style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
-                    {r.file_path}
-                  </p>
-                  <p style={{ marginTop: 8 }}>
-                    你的修改已保存到本地数据库。可选择<strong>解除关联</strong>把这条笔记降级为纯本地笔记（之后不再弹此提示），或<strong>稍后再说</strong>等原文件恢复后继续双向同步。
-                  </p>
-                </div>
-              ),
-              okText: "解除关联",
-              okButtonProps: { danger: true },
-              cancelText: "稍后再说",
-              onOk: async () => {
-                try {
-                  await sourceWritebackApi.clearLink(noteId);
-                  setNote((prev) =>
-                    prev ? { ...prev, source_file_path: null, source_file_type: null } : prev,
-                  );
-                  message.success("已解除外部 .md 关联，本笔记不再触发写回");
-                } catch (err) {
-                  message.error(`解除关联失败: ${err}`);
-                }
-              },
-            });
-          } else if (r.kind === "ok" && r.assets_copied > 0 && !silent) {
-            message.info(`已同步原文件，新插入 ${r.assets_copied} 个图片复制到旁侧 .assets/`);
-          }
-        } catch (err) {
-          // 写回失败不阻塞保存主流程，只静默记日志
-          console.warn("[writeback] failed:", err);
-        }
-      }
     } catch (e) {
       message.error(String(e));
     } finally {
@@ -1687,54 +1611,6 @@ function DesktopNoteEditorPage() {
     navigate(`/notes/${targetId}`);
   }
 
-  async function handleOpenSourceFile() {
-    try {
-      const abs = await sourceFileApi.getAbsolutePath(noteId);
-      if (!abs) {
-        message.warning("原始文件丢失或未关联");
-        return;
-      }
-      // PDF 用内置 iframe Modal 预览；其他类型（Word 等）用系统默认应用打开
-      if (note?.source_file_type === "pdf") {
-        setPdfPreviewUrl(convertFileSrc(abs));
-        setPdfPreviewAbsPath(abs);
-        setPdfPreviewOpen(true);
-      } else {
-        await open(abs);
-      }
-    } catch (e) {
-      message.error(`打开失败: ${e}`);
-    }
-  }
-
-  /**
-   * 在系统文件管理器里定位原始文件（资源管理器 / Finder / 文件管理器）。
-   *
-   * 用 `revealItemInDir(abs)` 而不是取目录再 openPath：前者会把该文件**选中**，
-   * 一眼就能看到是哪个；后者只打开目录，同名文件多时还得自己找。
-   * 顺带省掉手写路径分隔符（Windows `\` vs POSIX `/`）。
-   */
-  async function handleRevealSourceFile() {
-    try {
-      const abs = await sourceFileApi.getAbsolutePath(noteId);
-      if (!abs) {
-        message.warning("原始文件丢失或未关联");
-        return;
-      }
-      await revealItemInDir(abs);
-    } catch (e) {
-      message.error(`打开所在文件夹失败: ${e}`);
-    }
-  }
-
-  /** 主动解除外部 .md 双向同步关联（用户在 UI 上点击；与 Missing Modal 走同一后端 Command） */
-  /**
-   * 临时编辑 → 正式笔记。
-   *
-   * 只摘掉 is_scratch 标记：外部 .md 关联、写回、冲突检测全部原样保留，
-   * 变化仅仅是这条笔记开始出现在主列表 / 搜索 / 双链 / AI 问答里。
-   * 不做二次确认 —— 这是个"增加可见性"的非破坏动作，反向操作也随时可做。
-   */
   async function handleConvertScratchToNote() {
     try {
       await noteApi.setScratch(noteId, false);
@@ -1745,37 +1621,6 @@ function DesktopNoteEditorPage() {
     } catch (err) {
       message.error(`转换失败: ${err}`);
     }
-  }
-
-  function handleUnlinkSourceMd() {
-    Modal.confirm({
-      title: "解除与外部 .md 的双向同步？",
-      content: (
-        <div>
-          <p style={{ marginBottom: 4 }}>当前关联的原文件：</p>
-          <p style={{ fontFamily: "monospace", fontSize: 12, wordBreak: "break-all" }}>
-            {note?.source_file_path}
-          </p>
-          <p style={{ marginTop: 8 }}>
-            解除后这条笔记降级为纯本地笔记，保存时<strong>不再写回</strong>原 .md 文件。原文件本身不会被删除。
-          </p>
-        </div>
-      ),
-      okText: "解除关联",
-      okButtonProps: { danger: true },
-      cancelText: "取消",
-      onOk: async () => {
-        try {
-          await sourceWritebackApi.clearLink(noteId);
-          setNote((prev) =>
-            prev ? { ...prev, source_file_path: null, source_file_type: null } : prev,
-          );
-          message.success("已解除外部 .md 关联");
-        } catch (err) {
-          message.error(`解除关联失败: ${err}`);
-        }
-      },
-    });
   }
 
   async function handleExportNote() {
@@ -2255,107 +2100,6 @@ function DesktopNoteEditorPage() {
               保存
             </Button>
           )}
-          {note?.source_file_path && (
-            note?.source_file_type === "md" ? (
-              // 外部 .md 双向同步关联：主按钮用系统应用打开，下拉菜单提供"解除关联"
-              <Space.Compact>
-                <Tooltip title="用系统默认应用打开原始 .md 文件">
-                  <Button
-                    icon={<FileTextIcon size={16} />}
-                    onClick={handleOpenSourceFile}
-                  >
-                    MD
-                  </Button>
-                </Tooltip>
-                <Dropdown
-                  trigger={["click"]}
-                  menu={{
-                    items: [
-                      {
-                        key: "open",
-                        label: "用系统应用打开",
-                        icon: <FileTextIcon size={14} />,
-                        onClick: () => void handleOpenSourceFile(),
-                      },
-                      {
-                        key: "reveal",
-                        label: "打开所在文件夹",
-                        icon: <FolderOpen size={14} />,
-                        onClick: () => void handleRevealSourceFile(),
-                      },
-                      // 临时编辑笔记：给一条"转正"出口。不是临时笔记时整项不出现，
-                      // 避免给绝大多数正常笔记增加一个永远用不到的菜单项
-                      ...(note?.is_scratch
-                        ? [
-                            { type: "divider" as const },
-                            {
-                              key: "to-library",
-                              label: "转为正式笔记（进列表与搜索）",
-                              icon: <BookOpen size={14} />,
-                              onClick: () => void handleConvertScratchToNote(),
-                            },
-                          ]
-                        : []),
-                      { type: "divider" },
-                      {
-                        key: "unlink",
-                        label: "解除外部 .md 关联",
-                        danger: true,
-                        onClick: handleUnlinkSourceMd,
-                      },
-                    ],
-                  }}
-                >
-                  <Button icon={<ChevronDown size={14} />} title="更多操作" />
-                </Dropdown>
-              </Space.Compact>
-            ) : (
-              /* PDF / Word 等其它来源：主按钮打开文件，下拉补"定位到文件夹"。
-                 这些同样是磁盘上的本地文件，"它到底存在哪"的需求和 .md 一样常见。 */
-              <Space.Compact>
-                <Tooltip
-                  title={
-                    note?.source_file_type === "pdf"
-                      ? "查看原始 PDF"
-                      : "用系统默认应用打开原始文件"
-                  }
-                >
-                  <Button
-                    icon={<FileTextIcon size={16} />}
-                    onClick={handleOpenSourceFile}
-                  >
-                    {note?.source_file_type === "pdf"
-                      ? "PDF"
-                      : (note?.source_file_type ?? "源文件").toUpperCase()}
-                  </Button>
-                </Tooltip>
-                <Dropdown
-                  trigger={["click"]}
-                  menu={{
-                    items: [
-                      {
-                        key: "open",
-                        label:
-                          note?.source_file_type === "pdf"
-                            ? "查看原始 PDF"
-                            : "用系统应用打开",
-                        icon: <FileTextIcon size={14} />,
-                        onClick: () => void handleOpenSourceFile(),
-                      },
-                      {
-                        key: "reveal",
-                        label: "打开所在文件夹",
-                        icon: <FolderOpen size={14} />,
-                        onClick: () => void handleRevealSourceFile(),
-                      },
-                    ],
-                  }}
-                >
-                  <Button icon={<ChevronDown size={14} />} title="更多操作" />
-                </Dropdown>
-              </Space.Compact>
-            )
-          )}
           {/* R-005b 打印：所见即所得，克隆编辑器实时 DOM + 应用同款 CSS → 系统打印对话框 */}
           <Tooltip title="打印 / 打印成 PDF（所见即所得）">
             <Button icon={<Printer size={16} />} onClick={() => void handlePrint()} />
@@ -2552,7 +2296,7 @@ function DesktopNoteEditorPage() {
               style={{ marginBottom: 8, borderRadius: 6 }}
               message={
                 <span style={{ fontSize: 12 }}>
-                  临时编辑 —— 改动照常保存回原 .md 文件，但这条笔记不出现在笔记列表 / 搜索 / 双链中。
+                  临时编辑 —— 改动只存在本应用里，这条笔记不出现在笔记列表 / 搜索 / 双链中。
                 </span>
               }
               action={
@@ -2707,86 +2451,6 @@ function DesktopNoteEditorPage() {
 
       {/* 幻灯片演示：fixed 全屏覆盖，按 <hr> 分页 */}
 
-
-      {/* PDF 原文件预览 */}
-      <Modal
-        open={pdfPreviewOpen}
-        title={
-          <div
-            className="flex items-center justify-between"
-            style={{ paddingRight: 32, gap: 8 }}
-          >
-            <span className="truncate" style={{ minWidth: 0 }}>
-              {note?.title ? `${note.title} · 原始 PDF` : "原始 PDF"}
-            </span>
-            <Space size={4}>
-              <Tooltip
-                title={pdfPreviewMaximized ? "还原窗口" : "最大化"}
-              >
-                <Button
-                  size="small"
-                  type="text"
-                  icon={
-                    pdfPreviewMaximized ? (
-                      <Minimize2 size={14} />
-                    ) : (
-                      <Maximize2 size={14} />
-                    )
-                  }
-                  onClick={() => setPdfPreviewMaximized((v) => !v)}
-                />
-              </Tooltip>
-              {/*
-                兜底按钮：部分 WebView2（较老版本 / 更严格的 CSP 配置）会拦截
-                iframe 加载 asset: 协议并显示"已阻止此内容"。点这个按钮可
-                立即切到系统 PDF 阅读器，避免卡在空白页。
-              */}
-              <Button
-                size="small"
-                icon={<FolderOpen size={14} />}
-                onClick={async () => {
-                  if (!pdfPreviewAbsPath) return;
-                  try {
-                    await open(pdfPreviewAbsPath);
-                    setPdfPreviewOpen(false);
-                  } catch (e) {
-                    message.error(`打开失败: ${e}`);
-                  }
-                }}
-              >
-                用系统应用打开
-              </Button>
-            </Space>
-          </div>
-        }
-        footer={null}
-        onCancel={() => {
-          setPdfPreviewOpen(false);
-          // 下次打开回到默认"大窗口"态，避免总是全屏打扰
-          setPdfPreviewMaximized(false);
-        }}
-        width={pdfPreviewMaximized ? "100vw" : "85vw"}
-        style={
-          pdfPreviewMaximized
-            ? { top: 0, paddingBottom: 0, maxWidth: "100vw", margin: 0 }
-            : { top: 30 }
-        }
-        styles={{
-          body: {
-            padding: 0,
-            height: pdfPreviewMaximized ? "calc(100vh - 56px)" : "78vh",
-          },
-        }}
-        destroyOnHidden
-      >
-        {pdfPreviewUrl && (
-          <iframe
-            src={pdfPreviewUrl}
-            title="PDF 预览"
-            style={{ width: "100%", height: "100%", border: "none" }}
-          />
-        )}
-      </Modal>
 
       {/* 同名笔记消歧 */}
       <Modal
