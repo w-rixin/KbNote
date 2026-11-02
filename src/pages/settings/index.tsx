@@ -28,7 +28,7 @@ import { open as openUrl, revealItemInDir } from "@/lib/tauriShell";
 import { useLocation } from "react-router-dom";
 import { listen } from "@tauri-apps/api/event";
 import type { ImportResult, ImportConflictPolicy, ScannedFile, ExportResult, ExportProgress } from "@/types";
-import { systemApi, importApi, exportApi, folderApi, pdfApi, sourceFileApi, autostartApi, configApi, windowApi } from "@/lib/api";
+import { systemApi, importApi, exportApi, folderApi, sourceFileApi, autostartApi, configApi, windowApi } from "@/lib/api";
 import {
   useAppStore,
   EDITOR_FONT_LABELS,
@@ -651,44 +651,6 @@ function DesktopSettingsPage() {
     return result;
   }
 
-  async function handleImportPdfs() {
-    const picked = await open({
-      multiple: true,
-      filters: [{ name: "PDF", extensions: ["pdf"] }],
-    });
-    if (!picked) return;
-    const paths = Array.isArray(picked) ? picked : [picked];
-    if (paths.length === 0) return;
-    const job = await beginTrackedImportJob("PDF", paths.length, "pdf:import-progress");
-    try {
-      const results = await pdfApi.importPdfs(paths, importFolderId ?? null);
-      const ok = results.filter((r) => r.noteId !== null);
-      const fail = results.filter((r) => r.noteId === null);
-      job.finish(ok.length, fail.length);
-      if (ok.length > 0) message.success(`成功导入 ${ok.length} 个 PDF`);
-      if (fail.length > 0) {
-        Modal.warning({
-          title: `${fail.length} 个 PDF 导入失败`,
-          content: (
-            <List
-              size="small"
-              dataSource={fail}
-              renderItem={(r) => (
-                <List.Item>
-                  <Text type="danger" style={{ fontSize: 12 }}>
-                    {r.sourcePath.split(/[\\/]/).pop()}: {r.error}
-                  </Text>
-                </List.Item>
-              )}
-            />
-          ),
-        });
-      }
-    } catch (e) {
-      job.cancel();
-      message.error(`导入失败: ${e}`);
-    }
-  }
 
   async function handleImportWord() {
     const converter = await sourceFileApi.getConverterStatus().catch(() => "none" as const);
@@ -1995,7 +1957,7 @@ function DesktopSettingsPage() {
       >
         <div className="mb-3">
           <Typography.Paragraph type="secondary" style={{ marginBottom: 8, fontSize: 13 }}>
-            支持三种导入方式：从文件夹批量扫描 .md 文件；从本地选择 PDF 或 Word 文档。
+            支持两种导入方式：从文件夹批量扫描 .md 文件；从本地选择 Word 文档。
           </Typography.Paragraph>
           <Space wrap>
             <Select
@@ -2014,7 +1976,6 @@ function DesktopSettingsPage() {
             >
               扫描 Markdown 文件夹
             </Button>
-            <Button onClick={handleImportPdfs}>导入 PDF</Button>
             <Button onClick={handleImportWord}>导入 Word</Button>
           </Space>
         </div>
