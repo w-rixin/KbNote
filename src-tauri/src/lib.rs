@@ -1063,6 +1063,12 @@ pub fn run() {
             commands::converter::diagnose_doc_converter,
             commands::converter::convert_doc_to_docx_base64,
             commands::converter::read_file_as_base64,
+            // 任务分组（项目）：database/projects.rs 完整保留，同样只缺命令层
+            commands::projects::list_projects,
+            commands::projects::get_project,
+            commands::projects::create_project,
+            commands::projects::update_project,
+            commands::projects::delete_project,
             // 笔记模块
             commands::notes::create_note,
             commands::notes::update_note,

@@ -46,9 +46,6 @@ import type {
   ImportConflictPolicy,
   ImportResult,
   OpenMarkdownResult,
-  OrphanAssetScan,
-  OrphanAssetClean,
-  OrphanItem,
   AttachmentInfo,
   ScannedFile,
   ExportResult,
@@ -61,17 +58,9 @@ import type {
   DailyConvertOptions,
   DailyConvertResult,
   PdfImportResult,
-  ExcelImportResult,
   NoteTagBrief,
   DocConverter,
   ConverterDiagnostic,
-  SyncScope,
-  SyncImportMode,
-  WebDavConfig,
-  SyncManifest,
-  SyncResult,
-  SyncHistoryItem,
-  RemoteSnapshot,
   RestoreBatchResult,
   Task,
   TaskLinkInput,
@@ -89,18 +78,7 @@ import type {
   DataviewRow,
   PromptTemplate,
   PromptTemplateInput,
-  PlanTodayRequest,
-  PlanTodayResponse,
-  PlanFromGoalRequest,
-  PlanFromGoalResponse,
-  PlanFromExcelRequest,
-  ExcelPreview,
-  TaskSuggestion,
-  AttachmentPreview,
   MessageAttachment,
-  DraftNoteRequest,
-  DraftNoteResponse,
-  VaultStatus,
   SyncBackend,
   SyncBackendInput,
   SyncManifestV1,
@@ -120,11 +98,6 @@ import type {
   TranscribeRequest,
   TranscribeResult,
   AsrTestResult,
-  PushJob,
-  CreatePushJobInput,
-  UpdatePushJobInput,
-  PushRunLog,
-  PushPopupData,
   EmbeddedWhiteboardSaved,
   NoteSnapshotMeta,
   NoteSnapshot,
@@ -224,12 +197,6 @@ export const pdfApi = {
 };
 
 /** Excel / ODS / CSV 导入 API（仅桌面端；移动端未注册该 command） */
-export const excelApi = {
-  /** 批量导入表格文件为笔记（一个文件一篇），返回每条结果（含错误与被截断的工作表） */
-  importFiles: (paths: string[], folderId?: number | null) =>
-    invoke<ExcelImportResult[]>("import_excel_files", { paths, folderId }),
-};
-
 /** 通用源文件 API（Word / 任意附件） */
 export const sourceFileApi = {
   /** 探测系统可用的 .doc 转换器（启动时检测一次） */
@@ -582,17 +549,6 @@ export const appLockApi = {
  *
  * **忘记主密码 = 数据永久不可读**。首次 setup 前 UI 要强提示 + 建议导出 Markdown 备份。
  */
-export const vaultApi = {
-  status: () => invoke<VaultStatus>("vault_status"),
-  setup: (password: string) => invoke<void>("vault_setup", { password }),
-  unlock: (password: string) => invoke<void>("vault_unlock", { password }),
-  lock: () => invoke<void>("vault_lock"),
-  encryptNote: (id: number) => invoke<void>("encrypt_note", { id }),
-  decryptNote: (id: number) => invoke<string>("decrypt_note", { id }),
-  disableEncrypt: (id: number) =>
-    invoke<void>("disable_note_encrypt", { id }),
-};
-
 /** 文件夹 API */
 export const folderApi = {
   create: (name: string, parentId?: number) =>
@@ -915,18 +871,6 @@ export const aiChatApi = {
 };
 
 /** AI 会话附件 API（路线 A：导入文件给 AI 会话用） */
-export const aiAttachmentApi = {
-  /**
-   * 通用附件解析：后端按扩展名自动分发 Excel / PDF / 文本解析器，
-   * 返回 tagged AttachmentPreview。前端按 kind 渲染不同 chip。
-   */
-  parseAttachment: (filePath: string) =>
-    invoke<AttachmentPreview>("ai_parse_attachment", { filePath }),
-  /** @deprecated 用 parseAttachment；保留兼容旧调用方 */
-  parseExcel: (filePath: string) =>
-    invoke<ExcelPreview>("ai_parse_excel", { filePath }),
-};
-
 /** 导入 API */
 export const importApi = {
   /**
@@ -973,12 +917,6 @@ export const importApi = {
 };
 
 /** 孤儿素材维护 API（图片/视频/附件/PDF/源文件统一扫描清理） */
-export const orphanAssetApi = {
-  scanAll: () => invoke<OrphanAssetScan>("scan_orphan_assets"),
-  clean: (items: OrphanItem[]) =>
-    invoke<OrphanAssetClean>("clean_orphan_assets", { items }),
-};
-
 /** 外部 .md 双向同步 API（保存即写回原文件） */
 /** 一条本地资源 URL 的解析结果（resolveAssetDataUrls 返回） */
 export interface ResolvedAssetUrl {
@@ -1278,30 +1216,6 @@ export const aiWriteApi = {
  * 非流式：典型耗时 5~15 秒。调用前 UI 要给骨架屏/加载态。
  * 仅 OpenAI 兼容模型可用；Ollama 会返回错误字符串。
  */
-export const aiPlanApi = {
-  planToday: (request: PlanTodayRequest) =>
-    invoke<PlanTodayResponse>("ai_plan_today", { request }),
-  /** T-006: AI 生成笔记草稿 + 归档目录建议（未落库）*/
-  draftNote: (request: DraftNoteRequest) =>
-    invoke<DraftNoteResponse>("ai_draft_note", { request }),
-  /** 目标驱动 AI 智能规划：生成 10~30 条结构化待办 + 阶段里程碑（未落库） */
-  planFromGoal: (request: PlanFromGoalRequest) =>
-    invoke<PlanFromGoalResponse>("ai_plan_from_goal", { request }),
-  /** Excel/ODS 文件 → AI 智能规划：解析 Excel 内容后让 AI 拆四象限任务 */
-  planFromExcel: (request: PlanFromExcelRequest) =>
-    invoke<PlanFromGoalResponse>("ai_plan_from_excel", { request }),
-  /** 一键撤销某次 AI 智能规划生成的所有任务，返回删除条数 */
-  undoBatch: (batchId: string) =>
-    invoke<number>("undo_task_batch", { batchId }),
-  /**
-   * 把一段自然语言（通常是语音转写）解析成结构化任务建议。
-   * 用于「语音快速捕获 → 智能解析」场景；典型耗时 2-6s。
-   * 仅返回建议，未落库；调用方拿到后通常直接 taskApi.create()。
-   */
-  extractTaskFromText: (text: string) =>
-    invoke<TaskSuggestion>("ai_extract_task_from_text", { text }),
-};
-
 /**
  * AI 提示词库 API
  *
@@ -1323,81 +1237,7 @@ export const promptApi = {
 };
 
 /** 定时推送：用户维护多条推送，到点让 AI 跑提示词并推送结果 */
-export const pushApi = {
-  list: () => invoke<PushJob[]>("list_push_jobs"),
-  get: (id: number) => invoke<PushJob>("get_push_job", { id }),
-  create: (input: CreatePushJobInput) =>
-    invoke<number>("create_push_job", { input }),
-  update: (id: number, input: UpdatePushJobInput) =>
-    invoke<boolean>("update_push_job", { id, input }),
-  delete: (id: number) => invoke<boolean>("delete_push_job", { id }),
-  setEnabled: (id: number, enabled: boolean) =>
-    invoke<boolean>("set_push_job_enabled", { id, enabled }),
-  /** 立即运行一次（调试/即时查看） */
-  runNow: (id: number) => invoke<void>("run_push_job_now", { id }),
-  /** 某条推送的最近运行历史 */
-  logs: (jobId: number, limit?: number) =>
-    invoke<PushRunLog[]>("list_push_run_logs", { jobId, limit }),
-  /** 居中弹窗页按 run_log id 拉展示数据 */
-  popupData: (logId: number) =>
-    invoke<PushPopupData>("get_push_popup_data", { logId }),
-};
-
 /** 同步 API（V0 快照归档：本地 ZIP + WebDAV 全量快照） */
-export const syncApi = {
-  /** 导出为本地 ZIP 文件。backupPassword 非空时输出加密包（.zip.enc） */
-  exportToFile: (scope: SyncScope, targetPath: string, backupPassword?: string) =>
-    invoke<SyncResult>("sync_export_to_file", { scope, targetPath, backupPassword }),
-  /** 从本地 ZIP/.enc 文件导入。加密文件需提供 backupPassword */
-  importFromFile: (sourcePath: string, mode: SyncImportMode, backupPassword?: string) =>
-    invoke<SyncManifest>("sync_import_from_file", { sourcePath, mode, backupPassword }),
-  /** 测试 WebDAV 连接 */
-  webdavTest: (url: string, username: string, password: string) =>
-    invoke<void>("sync_webdav_test", { url, username, password }),
-  /** 推送到 WebDAV。backupPassword 非空时上传加密包（kb-sync-<host>.zip.enc） */
-  webdavPush: (scope: SyncScope, config: WebDavConfig, backupPassword?: string) =>
-    invoke<SyncResult>("sync_webdav_push", { scope, config, backupPassword }),
-  /** 从 WebDAV 拉取。云端是加密包时需提供 backupPassword */
-  webdavPull: (
-    mode: SyncImportMode,
-    config: WebDavConfig,
-    filename?: string,
-    backupPassword?: string,
-  ) => invoke<SyncManifest>("sync_webdav_pull", { mode, config, filename, backupPassword }),
-  /** 预览云端 manifest（加密包不支持，会返回错误） */
-  webdavPreview: (config: WebDavConfig, filename?: string) =>
-    invoke<SyncManifest>("sync_webdav_preview", { config, filename }),
-  /** 列出云端所有 kb-sync-*.zip / .zip.enc 快照（多设备场景） */
-  webdavListSnapshots: (config: WebDavConfig) =>
-    invoke<RemoteSnapshot[]>("sync_webdav_list_snapshots", { config }),
-  /** 保存 WebDAV 密码到 OS keyring */
-  savePassword: (username: string, password: string) =>
-    invoke<void>("sync_save_webdav_password", { username, password }),
-  /** 检查 keyring 中是否有该用户的密码 */
-  hasPassword: (username: string) =>
-    invoke<boolean>("sync_has_webdav_password", { username }),
-  /** 取出已加密的密码明文（仅供"复用配置"等本地内部流程用） */
-  getPassword: (username: string) =>
-    invoke<string | null>("sync_get_webdav_password", { username }),
-  /** 删除 keyring 中的密码 */
-  deletePassword: (username: string) =>
-    invoke<void>("sync_delete_webdav_password", { username }),
-  /** T-S050: 保存备份密码（全局唯一，hostname 派生 key 加密存 SQLite） */
-  saveBackupPassword: (password: string) =>
-    invoke<void>("sync_save_backup_password", { password }),
-  /** T-S050: 是否已保存备份密码 */
-  hasBackupPassword: () => invoke<boolean>("sync_has_backup_password"),
-  /** T-S050: 取已保存的备份密码明文（前端加载时填回密码框） */
-  getBackupPassword: () => invoke<string | null>("sync_get_backup_password"),
-  /** T-S050: 删除备份密码（关闭加密备份时） */
-  deleteBackupPassword: () => invoke<void>("sync_delete_backup_password"),
-  /** 列出同步历史 */
-  listHistory: (limit?: number) =>
-    invoke<SyncHistoryItem[]>("sync_list_history", { limit }),
-  /** 唤醒自动同步调度器（配置变更后调用）*/
-  schedulerReload: () => invoke<void>("sync_scheduler_reload"),
-};
-
 /**
  * T-024 同步 V1 API（多端真同步：单笔记粒度 + 多 backend）
  *
@@ -1579,16 +1419,6 @@ export const dataviewApi = {
 };
 
 /** #9 本地 OCR API（RapidOCR sidecar，仅桌面端可用） */
-export const ocrApi = {
-  /** 本地 OCR 引擎是否随安装包分发（不可用时前端应隐藏/禁用 OCR 入口） */
-  available: () => invoke<boolean>("ocr_available"),
-  /** 识别单张图片文件的文字 */
-  image: (path: string) => invoke<string>("ocr_image", { path }),
-  /** 识别扫描件 PDF（逐页渲染 + OCR + 拼接）；maxPages 缺省 30 */
-  pdf: (path: string, maxPages?: number) =>
-    invoke<string>("ocr_pdf", { path, maxPages: maxPages ?? null }),
-};
-
 /** 项目 API（v41）——任务的工作流容器 + 甘特图的根 */
 export const projectApi = {
   /** 列出项目。默认隐藏归档项目 */

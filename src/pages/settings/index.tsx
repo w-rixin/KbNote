@@ -139,8 +139,6 @@ const SETTINGS_NAV_ITEMS: { id: string; label: string }[] = [
   { id: "settings-update", label: "软件更新" },
   { id: "settings-startup", label: "启动设置" },
   { id: "settings-sidebar", label: "侧边栏" },
-  { id: "settings-features", label: "功能模块" },
-  { id: "settings-hidden-pin", label: "隐藏笔记 PIN" },
   { id: "settings-shortcuts", label: "全局快捷键" },
   { id: "settings-appearance", label: "外观自定义" },
   { id: "settings-editor", label: "编辑器外观" },
@@ -148,15 +146,8 @@ const SETTINGS_NAV_ITEMS: { id: string; label: string }[] = [
   { id: "settings-task-reminder", label: "待办提醒" },
   { id: "settings-import", label: "导入笔记" },
   { id: "settings-export", label: "导出 Markdown" },
-  { id: "settings-ai-models", label: "模型服务" },
-  { id: "settings-asr", label: "语音识别" },
-  { id: "settings-templates", label: "模板管理" },
   { id: "settings-data-dir", label: "数据目录" },
-  { id: "settings-sync", label: "同步备份" },
-  { id: "settings-mcp", label: "MCP 服务器" },
-  { id: "settings-ocr", label: "本地 OCR" },
   { id: "settings-snapshots", label: "历史版本" },
-  { id: "settings-orphan-assets", label: "孤儿素材清理" },
   { id: "settings-community", label: "作者 & 社区" },
 ];
 
@@ -1650,10 +1641,6 @@ function DesktopSettingsPage() {
 
 
 
-      <div id="settings-hidden-pin">
-
-      </div>
-
       <div id="settings-shortcuts">
         <ShortcutsSection />
       </div>
@@ -2844,161 +2831,13 @@ function DesktopSettingsPage() {
         )}
       </Card>
 
-      <Card
-        id="settings-ai-models"
-        title="模型服务"
-        extra={
-          <Space size={4}>
-            <Button
-              size="small"
-              icon={<Download size={14} />}
-              onClick={() => setImportOpen(true)}
-              title="从 JSON / 二维码 / ai.profile 导入模型服务"
-            >
-              导入
-            </Button>
-            <Button
-              type="primary"
-              size="small"
-              icon={<PlusOutlined />}
-              onClick={openAddModel}
-            >
-              新建模型服务
-            </Button>
-          </Space>
-        }
-      >
-        <Table
-          columns={modelColumns}
-          dataSource={models}
-          rowKey="id"
-          loading={modelsLoading}
-          pagination={false}
-          size="small"
-        />
-      </Card>
-
-      {/* 语音识别（ASR）：阿里云百炼 DashScope，通过抽象层支持未来扩展 */}
-
-
-      {/* 模板管理 */}
-      <Card
-        id="settings-templates"
-        title={
-          <span className="flex items-center gap-2">
-            <LayoutTemplate size={16} />
-            笔记模板
-          </span>
-        }
-        extra={
-          <Button
-            type="primary"
-            size="small"
-            icon={<PlusOutlined />}
-            onClick={openAddTemplate}
-          >
-            新建模板
-          </Button>
-        }
-      >
-        <div className="flex items-center justify-between py-1 mb-3">
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div>日记默认模板</div>
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              打开一篇还没写过的日记时，自动用此模板填充编辑区（已有内容的日记不受影响）
-            </Text>
-          </div>
-          <Select<number | null>
-            value={dailyDefaultTplId}
-            onChange={handleDailyDefaultTplChange}
-            placeholder="不套模板"
-            allowClear
-            style={{ minWidth: 220 }}
-            options={tplList.map((t) => ({ value: t.id, label: t.name }))}
-            notFoundContent={tplLoading ? "加载中..." : "暂无模板，请先创建"}
-          />
-        </div>
-        <Table
-          columns={[
-            {
-              title: "模板名称",
-              dataIndex: "name",
-              key: "name",
-            },
-            {
-              title: "描述",
-              dataIndex: "description",
-              key: "description",
-              ellipsis: true,
-              render: (text: string) => (
-                <Text type="secondary" style={{ fontSize: 12 }}>
-                  {text || "—"}
-                </Text>
-              ),
-            },
-            {
-              title: "操作",
-              key: "action",
-              width: 100,
-              render: (_: unknown, record: NoteTemplate) => (
-                <Space size="small">
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<Pencil size={14} />}
-                    onClick={() => openEditTemplate(record)}
-                  />
-                  <Popconfirm
-                    title="确认删除此模板？"
-                    onConfirm={() => handleDeleteTemplate(record.id)}
-                  >
-                    <Button type="text" size="small" danger icon={<Trash2 size={14} />} />
-                  </Popconfirm>
-                </Space>
-              ),
-            },
-          ]}
-          dataSource={tplList}
-          rowKey="id"
-          loading={tplLoading}
-          pagination={false}
-          size="small"
-        />
-      </Card>
-
       <div id="settings-data-dir">
         <DataDirSection />
       </div>
 
-      <div id="settings-sync">
-
-      </div>
-
-      {/* MCP 服务器：接入 Claude Desktop / Cursor / Cherry Studio */}
-
-
-      {/* #9 本地 OCR：图片 / 扫描件 PDF 识别 */}
-
-
-      {/* 维护：历史版本用量与清理 */}
       <div id="settings-snapshots">
         <SnapshotSection />
       </div>
-
-      {/* 维护：孤儿素材清理（5 类素材统一） */}
-      <Card
-        id="settings-orphan-assets"
-        size="small"
-        title={
-          <span className="flex items-center gap-2">
-            <Trash2 size={16} style={{ color: "var(--ant-color-primary)" }} />
-            维护 · 孤儿素材清理
-          </span>
-        }
-        className="mb-4"
-      >
-
-      </Card>
 
       <Card id="settings-community" title="作者 & 社区">
         <div className="flex items-center justify-between py-1">

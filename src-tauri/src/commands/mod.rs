@@ -13,6 +13,7 @@ pub mod image;
 pub mod import;
 pub mod links;
 pub mod notes;
+pub mod projects;
 pub mod search;
 pub mod shortcut;
 pub mod snapshot;
